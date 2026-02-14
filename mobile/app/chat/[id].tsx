@@ -133,15 +133,20 @@ export default function ChatDetailScreen() {
 
       <View style={[styles.inputContainer, { paddingBottom: Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 12) }]}>
         <View style={styles.inputRow}>
-          <TextInput
-            style={styles.textInput}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Type a message..."
-            placeholderTextColor={Colors.textTertiary}
-            multiline
-            maxLength={500}
-          />
+          <View style={styles.inputWrapper}>
+            <View style={styles.geminiLogo}>
+              <Ionicons name="sparkles" size={20} color={Colors.primary} />
+            </View>
+            <TextInput
+              style={styles.textInput}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Type a message..."
+              placeholderTextColor={Colors.textTertiary}
+              multiline
+              maxLength={500}
+            />
+          </View>
           <Pressable
             style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
             onPress={handleSend}
@@ -589,6 +594,21 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
   },
+  inputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 24,
+    paddingLeft: 14,
+    paddingRight: 18,
+    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  geminiLogo: {
+    marginRight: 10,
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -596,10 +616,8 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 24,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    backgroundColor: 'transparent',
+    paddingVertical: 6,
     fontSize: 15,
     fontFamily: 'Outfit_400Regular',
     color: Colors.text,

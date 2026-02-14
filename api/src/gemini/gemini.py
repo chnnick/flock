@@ -1,7 +1,6 @@
 from ..config import settings
 from google import genai
 from google.genai import types
-import os
 from typing import List, Dict, Optional
 
 

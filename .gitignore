@@ -4,6 +4,7 @@
 node_modules/
 
 # Expo / React Native
+.expo/
 mobile/.expo/
 mobile/dist/
 mobile/static-build/

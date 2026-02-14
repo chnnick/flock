@@ -12,7 +12,7 @@ export default function ChatDetailScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { chatRooms, user, sendMessage, matches, addCommuteFriend, commuteFriends } = useApp();
+  const { chatRooms, user, sendMessage, matches, addCommuteFriend, removeCommuteFriend, commuteFriends } = useApp();
   const [inputText, setInputText] = useState('');
   const [showInfoModal, setShowInfoModal] = useState(false);
   const flatListRef = useRef<FlatList>(null);
@@ -32,6 +32,11 @@ export default function ChatDetailScreen() {
     if (commuteFriends.some(f => f.id === profile.id)) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await addCommuteFriend(profile);
+  };
+
+  const handleRemoveFriend = async (profileId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await removeCommuteFriend(profileId);
   };
 
   if (!room || !user) {
@@ -195,28 +200,23 @@ export default function ChatDetailScreen() {
                       </View>
                     </View>
                   )}
-                  <Pressable
-                    style={[
-                      styles.addFriendButton,
-                      commuteFriends.some(f => f.id === profile.id) && styles.addFriendButtonDisabled,
-                    ]}
-                    onPress={() => handleAddFriend(profile)}
-                    disabled={commuteFriends.some(f => f.id === profile.id)}
-                  >
-                    <Ionicons
-                      name={commuteFriends.some(f => f.id === profile.id) ? 'checkmark-circle' : 'person-add-outline'}
-                      size={18}
-                      color={commuteFriends.some(f => f.id === profile.id) ? Colors.textSecondary : Colors.textInverse}
-                    />
-                    <Text
-                      style={[
-                        styles.addFriendButtonText,
-                        commuteFriends.some(f => f.id === profile.id) && styles.addFriendButtonTextDisabled,
-                      ]}
+                  {commuteFriends.some(f => f.id === profile.id) ? (
+                    <Pressable
+                      style={styles.unfriendButton}
+                      onPress={() => handleRemoveFriend(profile.id)}
                     >
-                      {commuteFriends.some(f => f.id === profile.id) ? 'Added' : 'Add as friend'}
-                    </Text>
-                  </Pressable>
+                      <Ionicons name="person-remove-outline" size={18} color={Colors.error} />
+                      <Text style={styles.unfriendButtonText}>Unfriend</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      style={styles.addFriendButton}
+                      onPress={() => handleAddFriend(profile)}
+                    >
+                      <Ionicons name="person-add-outline" size={18} color={Colors.textInverse} />
+                      <Text style={styles.addFriendButtonText}>Add as friend</Text>
+                    </Pressable>
+                  )}
                 </View>
               ))}
             </ScrollView>
@@ -445,16 +445,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 12,
   },
-  addFriendButtonDisabled: {
-    backgroundColor: Colors.surface,
-  },
   addFriendButtonText: {
     fontSize: 15,
     fontFamily: 'Outfit_600SemiBold',
     color: Colors.textInverse,
   },
-  addFriendButtonTextDisabled: {
-    color: Colors.textSecondary,
+  unfriendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.error + '15',
+    borderRadius: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.error + '40',
+  },
+  unfriendButtonText: {
+    fontSize: 15,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.error,
   },
   routeBanner: {
     flexDirection: 'row',

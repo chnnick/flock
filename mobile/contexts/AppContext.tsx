@@ -94,6 +94,7 @@ interface AppContextValue {
   sendMessage: (chatRoomId: string, body: string) => Promise<void>;
   submitReview: (matchId: string, enjoyed: boolean) => Promise<void>;
   addCommuteFriend: (profile: MatchProfile) => Promise<void>;
+  removeCommuteFriend: (profileId: string) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   clearPendingReview: () => void;
   triggerMatching: () => Promise<void>;
@@ -472,6 +473,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem('flock_friends', JSON.stringify(newFriends));
   }, [commuteFriends]);
 
+  const removeCommuteFriend = useCallback(async (profileId: string) => {
+    const newFriends = commuteFriends.filter(f => f.id !== profileId);
+    setCommuteFriends(newFriends);
+    await AsyncStorage.setItem('flock_friends', JSON.stringify(newFriends));
+  }, [commuteFriends]);
+
   const completeOnboarding = useCallback(async () => {
     setIsOnboarded(true);
     await AsyncStorage.setItem('flock_onboarded', 'true');
@@ -511,12 +518,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sendMessage,
     submitReview,
     addCommuteFriend,
+    removeCommuteFriend,
     completeOnboarding,
     clearPendingReview,
     triggerMatching,
     logout,
   }), [user, commute, matches, chatRooms, commuteFriends, pendingReview, isLoading, isOnboarded,
-    setUser, setCommute, acceptMatch, declineMatch, sendMessage, submitReview, addCommuteFriend, completeOnboarding,
+    setUser, setCommute, acceptMatch, declineMatch, sendMessage, submitReview, addCommuteFriend, removeCommuteFriend, completeOnboarding,
     clearPendingReview, triggerMatching, logout]);
 
   return (

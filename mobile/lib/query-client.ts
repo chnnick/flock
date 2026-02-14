@@ -2,19 +2,11 @@ import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 /**
- * Gets the base URL for the FastAPI backend (e.g., "http://localhost:8000")
+ * Gets the base URL for the FastAPI backend (e.g., "https://flock.mzhang.dev/api/")
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
-
-  if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
-  }
-
-  let url = new URL(`https://${host}`);
-
-  return url.href;
+  return "https://flock.mzhang.dev/api";
 }
 
 async function throwIfResNotOk(res: Response) {

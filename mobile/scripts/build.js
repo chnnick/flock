@@ -87,7 +87,7 @@ function clearMetroCache() {
 
 async function checkMetroHealth() {
   try {
-    const response = await fetch("http://localhost:8081/status", {
+    const response = await fetch("https://flock.mzhang.dev/api/status", {
       signal: AbortSignal.timeout(5000),
     });
     return response.ok;
@@ -180,7 +180,7 @@ async function downloadFile(url, outputPath) {
 
 async function downloadBundle(platform, timestamp) {
   // For expo-router apps, the entry is node_modules/expo-router/entry
-  const url = new URL("http://localhost:8081/node_modules/expo-router/entry.bundle");
+  const url = new URL("https://flock.mzhang.dev/api/node_modules/expo-router/entry.bundle");
   url.searchParams.set("platform", platform);
   url.searchParams.set("dev", "false");
   url.searchParams.set("hot", "false");
@@ -208,7 +208,7 @@ async function downloadManifest(platform) {
 
   try {
     console.log(`Fetching ${platform} manifest...`);
-    const response = await fetch("http://localhost:8081/manifest", {
+    const response = await fetch("https://flock.mzhang.dev/api/manifest", {
       headers: { "expo-platform": platform },
       signal: controller.signal,
     });
@@ -311,7 +311,7 @@ function extractAssets(timestamp) {
       const originalPath = match[1];
       const filename = match[3] + "." + match[4];
 
-      const tempUrl = new URL(`http://localhost:8081${originalPath}`);
+      const tempUrl = new URL(`https://flock.mzhang.dev/api${originalPath}`);
       const unstablePath = tempUrl.searchParams.get("unstable_path");
 
       if (!unstablePath) {
@@ -355,7 +355,7 @@ async function downloadAssets(assets, timestamp) {
   const downloadPromises = assets.map(async (asset) => {
     const platform = Array.from(asset.platforms)[0];
 
-    const tempUrl = new URL(`http://localhost:8081${asset.originalPath}`);
+    const tempUrl = new URL(`https://flock.mzhang.dev/api${asset.originalPath}`);
     const unstablePath = tempUrl.searchParams.get("unstable_path");
 
     if (!unstablePath) {

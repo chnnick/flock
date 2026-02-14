@@ -1,16 +1,18 @@
 import json
 import redis
+import os
 from datetime import datetime, timezone
 from src.db.models.chat import ChatMessage, ChatRoom
 from src.chat.schemas import MessageCreate
+from src.config import settings
 
-# Connection details from user's example
+# Connection details from environment variables
 cache = redis.Redis(
-    host='redis-13261.c281.us-east-1-2.ec2.cloud.redislabs.com',
-    port=13261,
+    host=settings.REDIS_HOST,
+    port=settings.REDIS_PORT,
     decode_responses=True,
-    username="default",
-    password="aH1pkm7AiWGz4V7iQQxanIBWdL3fwySF",
+    username=settings.REDIS_USERNAME,
+    password=settings.REDIS_PASSWORD,
 )
 
 class ChatService:

@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "scripts": {
     "postinstall": "patch-package",
-    "expo:dev": "npx expo start --localhost",
-    "expo:start:static:build": "npx expo start --no-dev --minify --localhost",
+    "expo:dev": "npx expo start --localhost --port 8087",
+    "expo:start:static:build": "npx expo start --no-dev --minify --localhost --port 8087",
     "expo:static:build": "node scripts/build.js",
-    "start": "npx expo start",
+    "start": "npx expo start --localhost --port 8087",
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
     "android": "expo run:android",

@@ -338,22 +338,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // 3. Fallback to 10.0.2.2 for Android emulator
         // 4. Ultimate fallback to localhost
         
-        let host = 'localhost';
-        
-        if (Constants.expoConfig?.hostUri) {
-          host = Constants.expoConfig.hostUri.split(':')[0];
-          console.log(`Detected Expo host: ${host}`);
-        } else if (Platform.OS === 'android') {
-          host = '10.0.2.2';
-          console.log(`Detected Android emulator, using: ${host}`);
-        } else {
-          console.log(`No hostUri detected, falling back to: ${host}`);
-        }
-        
-        // Ensure host is not empty or "localhost" if we are on a real device/emulator
-        // that might need a specific IP. But hostUri usually handles this.
-        
-        const wsUrl = `ws://${host}:8000/api/chat/ws/chat/${room.id}`;
+        const host = 'flock.mzhang.dev';
+        const wsUrl = `wss://${host}/api/chat/ws/chat/${room.id}`;
         console.log(`[WS] Attempting to connect to room ${room.id} at ${wsUrl}`);
         const ws = new WebSocket(wsUrl);
 
@@ -511,13 +497,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // If not connected, try to reconnect once
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.log(`[WS] WebSocket not open for room ${chatRoomId}. Attempting to reconnect...`);
-      let host = 'localhost';
-      if (Constants.expoConfig?.hostUri) {
-        host = Constants.expoConfig.hostUri.split(':')[0];
-      } else if (Platform.OS === 'android') {
-        host = '10.0.2.2';
-      }
-      const wsUrl = `ws://${host}:8000/api/chat/ws/chat/${chatRoomId}`;
+      const host = 'flock.mzhang.dev';
+      const wsUrl = `wss://${host}/api/chat/ws/chat/${chatRoomId}`;
       console.log(`[WS] Reconnecting at ${wsUrl}`);
       ws = new WebSocket(wsUrl);
       

@@ -1,14 +1,14 @@
-import pymongo  
-from pymongo import AsyncMongoClient  
-from beanie import init_beanie  
+from motor.motor_asyncio import AsyncIOMotorClient
+from beanie import init_beanie
+import certifi
 from src.config import settings
 from src.db.models.user import User
 from src.db.models.chat import ChatMessage, ChatRoom
 
 async def init_db():
-    client = AsyncMongoClient(
+    client = AsyncIOMotorClient(
         settings.MONGO_URI,
-        server_api=pymongo.server_api.ServerApi(version="1")
+        tlsCAFile=certifi.where()  # Uses system CA certificates
     )
     db = client.get_database("commutebuddy")
 

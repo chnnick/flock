@@ -33,7 +33,7 @@
       [
         "expo-router",
         {
-          "origin": "https://localhost"
+          "origin": "https://flock.mzhang.dev"
         }
       ],
       "expo-font",

@@ -23,7 +23,7 @@ npm run setup:mobile # npm install (installs mobile deps via postinstall)
 ## Run
 
 ```bash
-npm run run:api     # FastAPI on http://localhost:8000 (macOS/Linux; requires api/venv)
+npm run run:api     # FastAPI on http://flock.mzhang.dev:8777 (via Nginx proxying 8007)
 npm start           # Expo dev server (or: npm run run:mobile)
 ```
 

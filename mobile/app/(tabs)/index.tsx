@@ -1,4 +1,5 @@
-import { View, Text, Pressable, StyleSheet, ScrollView, Platform } from 'react-native';
+import { useState } from 'react';
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +13,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { user, commute, matches, triggerMatching } = useApp();
+  const [showHowFlockWorks, setShowHowFlockWorks] = useState(false);
   const activeMatches = matches.filter(m => m.status === 'active');
   const pendingMatches = matches.filter(m => m.status === 'pending');
 
@@ -21,8 +23,21 @@ export default function HomeScreen() {
     router.push('/(tabs)/matches');
   };
 
+  const handleHelpPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowHowFlockWorks(true);
+  };
+
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
+      <Pressable
+        style={[styles.helpButton, { top: topInset + 8 }]}
+        onPress={handleHelpPress}
+        accessibilityLabel="How Flock Works help"
+        accessibilityRole="button"
+      >
+        <Ionicons name="help-circle-outline" size={24} color={Colors.textSecondary} />
+      </Pressable>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -164,32 +179,58 @@ export default function HomeScreen() {
           </View>
         )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>How Flock Works</Text>
-          <View style={styles.stepsContainer}>
-            <StepCard
-              icon="location-outline"
-              title="Set Your Route"
-              description="Enter your start and end points with your preferred times"
-              color={Colors.primary}
-            />
-            <StepCard
-              icon="git-compare-outline"
-              title="Get Matched"
-              description="Our algorithm finds commuters with overlapping routes"
-              color={Colors.accent}
-            />
-            <StepCard
-              icon="chatbubble-ellipses-outline"
-              title="Chat & Walk"
-              description="Introduce yourselves and plan your shared commute"
-              color={Colors.secondary}
-            />
-          </View>
-        </View>
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      <Modal
+        visible={showHowFlockWorks}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowHowFlockWorks(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>How Flock Works</Text>
+              <Pressable
+                onPress={() => setShowHowFlockWorks(false)}
+                accessibilityLabel="Close"
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.modalCloseButton, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </Pressable>
+            </View>
+            <ScrollView
+              style={styles.modalScrollView}
+              contentContainerStyle={[styles.modalScrollContent, { paddingBottom: insets.bottom + 24 }]}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.stepsContainer}>
+                <StepCard
+                  icon="location-outline"
+                  title="Set Your Route"
+                  description="Enter your start and end points with your preferred times"
+                  color={Colors.primary}
+                />
+                <StepCard
+                  icon="git-compare-outline"
+                  title="Get Matched"
+                  description="Our algorithm finds commuters with overlapping routes"
+                  color={Colors.accent}
+                />
+                <StepCard
+                  icon="chatbubble-ellipses-outline"
+                  title="Chat & Walk"
+                  description="Introduce yourselves and plan your shared commute"
+                  color={Colors.secondary}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -214,6 +255,55 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  helpButton: {
+    position: 'absolute',
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    width: '100%',
+    height: '85%',
+    backgroundColor: Colors.card,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: 'Outfit_700Bold',
+    color: Colors.text,
+  },
+  modalCloseButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    padding: 20,
   },
   scrollContent: {
     paddingHorizontal: 20,

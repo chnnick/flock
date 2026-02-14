@@ -14,5 +14,13 @@
     "lint:fix": "cd mobile && npx expo lint --fix",
     "android": "cd mobile && npx expo run:android",
     "ios": "cd mobile && npx expo run:ios"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.10",
+    "patch-package": "^8.0.1",
+    "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "expo": "^54.0.33"
   }
 }

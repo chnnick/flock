@@ -1,7 +1,6 @@
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Tabs } from 'expo-router';
 import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, StyleSheet, useColorScheme, View } from 'react-native';
 import React from 'react';
@@ -44,21 +43,17 @@ function ClassicTabLayout() {
         tabBarInactiveTintColor: Colors.light.tabIconDefault,
         tabBarStyle: {
           position: 'absolute' as const,
-          backgroundColor: isIOS ? 'transparent' : isDark ? '#000' : '#fff',
-          borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: isDark ? '#333' : Colors.border,
+          backgroundColor: isIOS ? 'transparent' : isDark ? 'rgba(30, 30, 30, 0.98)' : Colors.background,
+          borderTopWidth: 1,
+          borderTopColor: isDark ? 'rgba(255,255,255,0.12)' : Colors.border,
           elevation: 0,
           ...(isWeb ? { height: 84 } : {}),
         },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView
-              intensity={100}
-              tint={isDark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(30, 30, 30, 0.98)' : Colors.background }]} />
           ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? '#000' : '#fff' }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(30, 30, 30, 0.98)' : Colors.background }]} />
           ) : null,
         tabBarLabelStyle: {
           fontFamily: 'Outfit_500Medium',

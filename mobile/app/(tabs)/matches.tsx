@@ -8,11 +8,16 @@ import Colors from '@/constants/colors';
 import { useApp, Match } from '@/contexts/AppContext';
 import { useState } from 'react';
 
+function isGroupMatch(match: Match): boolean {
+  return match.participants.length > 1 || (match.maxCapacity != null && match.maxCapacity > 1);
+}
+
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { matches, commute, acceptMatch, declineMatch, triggerMatching } = useApp();
   const [loadingMatch, setLoadingMatch] = useState<string | null>(null);
+  const [isQueuing, setIsQueuing] = useState(false);
 
   const pendingMatches = matches.filter(m => m.status === 'pending');
   const activeMatches = matches.filter(m => m.status === 'active');
@@ -32,6 +37,21 @@ export default function MatchesScreen() {
   const handleRefresh = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await triggerMatching();
+  };
+
+  const handleQueue = async () => {
+    if (!commute || pendingMatches.length === 0 || isQueuing) return;
+    const wantGroup = commute.matchPreference === 'group';
+    const matchingPreference = pendingMatches.filter(m => isGroupMatch(m) === wantGroup);
+    const bestMatch = matchingPreference.length > 0
+      ? matchingPreference.reduce((a, b) => a.compositeScore >= b.compositeScore ? a : b)
+      : null;
+    if (!bestMatch) return;
+    setIsQueuing(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await acceptMatch(bestMatch.id);
+    setIsQueuing(false);
+    router.push({ pathname: '/chat/[id]', params: { id: bestMatch.chatRoomId } });
   };
 
   return (
@@ -82,20 +102,63 @@ export default function MatchesScreen() {
         ) : (
           <>
             {pendingMatches.length > 0 && (
+              <>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.queueButton,
+                    pressed && styles.queueButtonPressed,
+                    isQueuing && styles.queueButtonDisabled,
+                  ]}
+                  onPress={handleQueue}
+                  disabled={isQueuing}
+                >
+                  {isQueuing ? (
+                    <ActivityIndicator color={Colors.textInverse} size="small" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name={commute?.matchPreference === 'group' ? 'people' : 'person'}
+                        size={20}
+                        color={Colors.textInverse}
+                      />
+                      <Text style={styles.queueButtonText}>
+                        Queue for {commute?.matchPreference === 'group' ? 'Group' : '1:1'}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+                <Text style={styles.queueHint}>
+                  Auto-match and join, or browse below
+                </Text>
+              </>
+            )}
+            {pendingMatches.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
                   New Matches ({pendingMatches.length})
                 </Text>
-                {pendingMatches.map((match, index) => (
-                  <MatchCard
-                    key={match.id}
-                    match={match}
-                    index={index}
-                    onAccept={() => handleAccept(match.id)}
-                    onDecline={() => handleDecline(match.id)}
-                    isLoading={loadingMatch === match.id}
-                  />
-                ))}
+                {pendingMatches.map((match, index) => {
+                  const isGroup = isGroupMatch(match);
+                  return isGroup ? (
+                    <GroupMatchCard
+                      key={match.id}
+                      match={match}
+                      index={index}
+                      onAccept={() => handleAccept(match.id)}
+                      onDecline={() => handleDecline(match.id)}
+                      isLoading={loadingMatch === match.id}
+                    />
+                  ) : (
+                    <MatchCard
+                      key={match.id}
+                      match={match}
+                      index={index}
+                      onAccept={() => handleAccept(match.id)}
+                      onDecline={() => handleDecline(match.id)}
+                      isLoading={loadingMatch === match.id}
+                    />
+                  );
+                })}
               </View>
             )}
 
@@ -105,7 +168,7 @@ export default function MatchesScreen() {
                   Active ({activeMatches.length})
                 </Text>
                 {activeMatches.map((match, index) => (
-                  <ActiveMatchCard key={match.id} match={match} index={index} />
+                  <ActiveMatchCard key={match.id} match={match} index={index} isGroup={isGroupMatch(match)} />
                 ))}
               </View>
             )}
@@ -123,7 +186,6 @@ function MatchCard({ match, index, onAccept, onDecline, isLoading }: {
 }) {
   const person = match.participants[0];
   const overlapPct = Math.round(match.overlapScore * 100);
-  const commonInterests = match.interestScore > 0;
 
   return (
     <Animated.View entering={FadeInDown.delay(index * 100).duration(500)}>
@@ -199,8 +261,117 @@ function MatchCard({ match, index, onAccept, onDecline, isLoading }: {
   );
 }
 
-function ActiveMatchCard({ match, index }: { match: Match; index: number }) {
+function GroupMatchCard({ match, index, onAccept, onDecline, isLoading }: {
+  match: Match; index: number; onAccept: () => void; onDecline: () => void; isLoading: boolean;
+}) {
+  const groupType = match.transportMode === 'walk' ? 'Walking Group' : 'Transit Group';
+  const capacity = match.maxCapacity ?? 4;
+  const currentCount = match.participants.length;
+  const capacityLabel = `${currentCount}/${capacity}`;
+  const participantNames = match.participants.length <= 3
+    ? match.participants.map(p => p.name.split(' ')[0]).join(', ')
+    : `${match.participants.slice(0, 2).map(p => p.name.split(' ')[0]).join(', ')}, +${match.participants.length - 2}`;
+  const allInterests = [...new Set(match.participants.flatMap(p => p.interests))];
+
+  return (
+    <Animated.View entering={FadeInDown.delay(index * 100).duration(500)}>
+      <View style={styles.matchCard}>
+        <View style={styles.groupCardHeader}>
+          <View style={[styles.groupTypeBadge, { backgroundColor: match.transportMode === 'walk' ? Colors.walk + '20' : Colors.transit + '20' }]}>
+            <Ionicons
+              name={match.transportMode === 'walk' ? 'walk' : 'train'}
+              size={14}
+              color={match.transportMode === 'walk' ? Colors.walk : Colors.transit}
+            />
+            <Text style={[styles.groupTypeText, { color: match.transportMode === 'walk' ? Colors.walk : Colors.transit }]}>
+              {groupType}
+            </Text>
+          </View>
+          <View style={styles.capacityBadge}>
+            <Text style={styles.capacityText}>{capacityLabel}</Text>
+          </View>
+        </View>
+
+        <View style={styles.groupParticipantsRow}>
+          <View style={styles.groupAvatars}>
+            {match.participants.map((p, i) => (
+              <View
+                key={p.id}
+                style={[
+                  styles.groupAvatar,
+                  { backgroundColor: p.avatar, marginLeft: i > 0 ? -10 : 0, zIndex: match.participants.length - i },
+                ]}
+              >
+                <Text style={styles.groupAvatarText}>{p.name[0]}</Text>
+              </View>
+            ))}
+          </View>
+          <Text style={styles.groupParticipantNames} numberOfLines={1}>{participantNames}</Text>
+        </View>
+
+        <View style={styles.matchDetails}>
+          <View style={styles.detailRow}>
+            <Ionicons
+              name={match.transportMode === 'walk' ? 'walk' : 'train'}
+              size={16}
+              color={match.transportMode === 'walk' ? Colors.walk : Colors.transit}
+            />
+            <Text style={styles.detailText}>
+              {match.sharedSegmentStart.name} to {match.sharedSegmentEnd.name}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons name="time-outline" size={16} color={Colors.textSecondary} />
+            <Text style={styles.detailText}>{match.estimatedTime} shared commute</Text>
+          </View>
+        </View>
+
+        {allInterests.length > 0 && (
+          <View style={styles.interestTags}>
+            {allInterests.slice(0, 4).map(interest => (
+              <View key={interest} style={styles.interestChip}>
+                <Text style={styles.interestChipText}>{interest}</Text>
+              </View>
+            ))}
+            {allInterests.length > 4 && (
+              <Text style={styles.moreInterests}>+{allInterests.length - 4}</Text>
+            )}
+          </View>
+        )}
+
+        <View style={styles.actionRow}>
+          <Pressable
+            style={({ pressed }) => [styles.declineButton, pressed && { opacity: 0.8 }]}
+            onPress={onDecline}
+          >
+            <Ionicons name="close" size={22} color={Colors.error} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.acceptButton, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+            onPress={onAccept}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color={Colors.textInverse} size="small" />
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={20} color={Colors.textInverse} />
+                <Text style={styles.acceptButtonText}>Accept Match</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+function ActiveMatchCard({ match, index, isGroup }: { match: Match; index: number; isGroup: boolean }) {
   const person = match.participants[0];
+  const groupType = match.transportMode === 'walk' ? 'Walking Group' : 'Transit Group';
+  const capacity = match.maxCapacity ?? 4;
+  const currentCount = match.participants.length;
+  const capacityLabel = `${currentCount}/${capacity}`;
 
   return (
     <Animated.View entering={FadeInRight.delay(index * 100).duration(500)}>
@@ -208,19 +379,49 @@ function ActiveMatchCard({ match, index }: { match: Match; index: number }) {
         style={({ pressed }) => [styles.activeCard, pressed && { opacity: 0.9 }]}
         onPress={() => router.push({ pathname: '/chat/[id]', params: { id: match.chatRoomId } })}
       >
-        <View style={[styles.avatar, { backgroundColor: person.avatar, width: 44, height: 44 }]}>
-          <Text style={[styles.avatarText, { fontSize: 18 }]}>{person.name[0]}</Text>
-        </View>
-        <View style={styles.activeInfo}>
-          <Text style={styles.activeName}>{person.name}</Text>
-          <Text style={styles.activeRoute}>
-            {match.sharedSegmentStart.name} to {match.sharedSegmentEnd.name}
-          </Text>
-        </View>
-        <View style={styles.activeRight}>
-          <Text style={styles.activeTime}>{match.estimatedTime}</Text>
-          <Ionicons name="chatbubble-ellipses" size={18} color={Colors.primary} />
-        </View>
+        {isGroup ? (
+          <>
+            <View style={styles.activeGroupAvatars}>
+              {match.participants.slice(0, 4).map((p, i) => (
+                <View
+                  key={p.id}
+                  style={[
+                    styles.activeGroupAvatar,
+                    { backgroundColor: p.avatar, marginLeft: i > 0 ? -8 : 0, zIndex: 4 - i },
+                  ]}
+                >
+                  <Text style={styles.activeGroupAvatarText}>{p.name[0]}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.activeInfo}>
+              <Text style={styles.activeName}>{groupType}</Text>
+              <Text style={styles.activeRoute}>
+                {match.sharedSegmentStart.name} to {match.sharedSegmentEnd.name}
+              </Text>
+            </View>
+            <View style={styles.activeRight}>
+              <Text style={styles.activeCapacity}>{capacityLabel}</Text>
+              <Ionicons name="chatbubble-ellipses" size={18} color={Colors.primary} />
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={[styles.avatar, { backgroundColor: person.avatar, width: 44, height: 44 }]}>
+              <Text style={[styles.avatarText, { fontSize: 18 }]}>{person.name[0]}</Text>
+            </View>
+            <View style={styles.activeInfo}>
+              <Text style={styles.activeName}>{person.name}</Text>
+              <Text style={styles.activeRoute}>
+                {match.sharedSegmentStart.name} to {match.sharedSegmentEnd.name}
+              </Text>
+            </View>
+            <View style={styles.activeRight}>
+              <Text style={styles.activeTime}>{match.estimatedTime}</Text>
+              <Ionicons name="chatbubble-ellipses" size={18} color={Colors.primary} />
+            </View>
+          </>
+        )}
       </Pressable>
     </Animated.View>
   );
@@ -250,6 +451,35 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  queueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.secondary,
+    borderRadius: 16,
+    paddingVertical: 16,
+    marginBottom: 8,
+  },
+  queueButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  queueButtonDisabled: {
+    opacity: 0.7,
+  },
+  queueButtonText: {
+    fontSize: 17,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textInverse,
+  },
+  queueHint: {
+    fontSize: 13,
+    fontFamily: 'Outfit_400Regular',
+    color: Colors.textSecondary,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
   sectionTitle: {
     fontSize: 16,
     fontFamily: 'Outfit_600SemiBold',
@@ -271,6 +501,65 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     marginBottom: 14,
+  },
+  groupCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  groupTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  groupTypeText: {
+    fontSize: 13,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  capacityBadge: {
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  capacityText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textSecondary,
+  },
+  groupParticipantsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  groupAvatars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  groupAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.card,
+  },
+  groupAvatarText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_700Bold',
+    color: Colors.textInverse,
+  },
+  groupParticipantNames: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.text,
   },
   avatar: {
     width: 52,
@@ -416,6 +705,29 @@ const styles = StyleSheet.create({
   activeTime: {
     fontSize: 12,
     fontFamily: 'Outfit_500Medium',
+    color: Colors.textSecondary,
+  },
+  activeGroupAvatars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activeGroupAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.card,
+  },
+  activeGroupAvatarText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_700Bold',
+    color: Colors.textInverse,
+  },
+  activeCapacity: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
     color: Colors.textSecondary,
   },
   emptyState: {

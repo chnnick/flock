@@ -10,29 +10,29 @@ import { useApp } from '@/contexts/AppContext';
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const { user, commuteFriends, matches, logout } = useApp();
+  const { user, commuteFriends, matches, logout, removeCommuteFriend, getOrCreateChatRoomForFriend } = useApp();
 
   const completedCommutes = matches.filter(m => m.status === 'completed' || m.status === 'active').length;
 
   const handleLogout = () => {
+    const doLogout = async () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      await logout();
+      router.replace('/(onboarding)');
+    };
     if (Platform.OS === 'web') {
-      logout();
-      router.replace('/');
+      doLogout();
       return;
     }
     Alert.alert(
       'Sign Out',
-      'Are you sure you want to sign out? This will clear all your data.',
+      'Are you sure you want to sign out? You will need to create a new account to use the app again.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: async () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            await logout();
-            router.replace('/');
-          },
+          onPress: doLogout,
         },
       ],
     );
@@ -88,7 +88,15 @@ export default function ProfileScreen() {
             <Text style={styles.sectionTitle}>Commute Friends</Text>
             <View style={styles.friendsList}>
               {commuteFriends.map(friend => (
-                <View key={friend.id} style={styles.friendCard}>
+                <Pressable
+                  key={friend.id}
+                  style={({ pressed }) => [styles.friendCard, pressed && { backgroundColor: Colors.surface }]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    const roomId = getOrCreateChatRoomForFriend(friend);
+                    router.push({ pathname: '/chat/[id]', params: { id: roomId } });
+                  }}
+                >
                   <View style={[styles.friendAvatar, { backgroundColor: friend.avatar }]}>
                     <Text style={styles.friendAvatarText}>{friend.name[0]}</Text>
                   </View>
@@ -96,7 +104,17 @@ export default function ProfileScreen() {
                     <Text style={styles.friendName}>{friend.name}</Text>
                     <Text style={styles.friendOccupation}>{friend.occupation}</Text>
                   </View>
-                </View>
+                  <Pressable
+                    style={({ pressed }) => [styles.unfriendButton, pressed && { opacity: 0.7 }]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      removeCommuteFriend(friend.id);
+                    }}
+                    accessibilityLabel="Unfriend"
+                  >
+                    <Ionicons name="person-remove-outline" size={22} color={Colors.error} />
+                  </Pressable>
+                </Pressable>
               ))}
             </View>
           </Animated.View>
@@ -104,6 +122,34 @@ export default function ProfileScreen() {
 
         <Animated.View entering={FadeInDown.delay(400).duration(500)} style={styles.settingsSection}>
           <Text style={styles.sectionTitle}>Settings</Text>
+
+          <Pressable
+            style={({ pressed }) => [styles.settingsItem, pressed && { backgroundColor: Colors.surface }]}
+            onPress={() => {
+              Haptics.selectionAsync();
+              router.push('/edit-profile');
+            }}
+          >
+            <View style={[styles.settingsIcon, { backgroundColor: Colors.secondary + '20' }]}>
+              <Ionicons name="person-outline" size={20} color={Colors.secondary} />
+            </View>
+            <Text style={styles.settingsText}>Edit Profile</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.settingsItem, pressed && { backgroundColor: Colors.surface }]}
+            onPress={() => {
+              Haptics.selectionAsync();
+              router.push('/edit-interests');
+            }}
+          >
+            <View style={[styles.settingsIcon, { backgroundColor: Colors.accent + '20' }]}>
+              <Ionicons name="heart-outline" size={20} color={Colors.accent} />
+            </View>
+            <Text style={styles.settingsText}>Edit Interests</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+          </Pressable>
 
           <Pressable
             style={({ pressed }) => [styles.settingsItem, pressed && { backgroundColor: Colors.surface }]}
@@ -262,6 +308,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_400Regular',
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  unfriendButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: Colors.error + '12',
   },
   settingsSection: {
     marginBottom: 20,

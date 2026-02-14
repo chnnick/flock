@@ -21,6 +21,8 @@ npm-debug.log*
 # Expo / React Native
 mobile/.expo/
 mobile/dist/
+mobile/static-build/
+mobile/server_dist/
 mobile/android/
 mobile/ios/
 *.jks
@@ -29,7 +31,9 @@ mobile/ios/
 *.key
 *.mobileprovision
 
+# ──────────────────────────────────────
 # IDE
+# ──────────────────────────────────────
 .vscode/
 .idea/
 *.swp

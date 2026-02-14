@@ -30,7 +30,7 @@ run-mobile: ## Start Expo dev server
 test: # TODO: add tests
 
 test-connection: ## Test MongoDB connection
-	cd api && . venv/bin/activate && python -m src.tests.test_connection
+	cd api && . venv/bin/activate && python -m tests.test_connection
 
 test-api: ## Run API tests
 	cd api && . venv/bin/activate && pytest

@@ -1,0 +1,326 @@
+Product Requirements Document: Commute Buddy
+Version: 1.0
+Date: February 13, 2026
+Status: Draft
+
+1. Overview
+1.1 Product Summary
+Commute Buddy is a mobile application that matches commuters with overlapping routes and schedules so they can walk or ride public transit together. The app uses a route-overlap algorithm (deployed on Snowflake) to find the best shared commute segments, creates small group chats with AI-assisted icebreakers, and lets users build a network of recurring "commute friends."
+
+1.2 Problem Statement
+Urban commuters — particularly those walking or taking public transit — often travel the same routes at the same times as strangers nearby. This represents a missed opportunity for safety, social connection, and community building. There is no lightweight, algorithmically driven product that turns overlapping commutes into opt-in shared experiences.
+
+1.3 Goals
+Reduce the perceived isolation and safety concerns of solo commuting (especially walking and transit).
+Provide high-quality matches based primarily on route overlap and secondarily on shared interests.
+Create a frictionless flow from sign-up → match → shared commute → ongoing connection.
+Deliver a visually engaging experience that shows users how their routes align.
+1.4 Success Metrics
+Metric	Target (MVP, 3 months post-launch)
+User sign-ups	5,000
+Commute match acceptance rate	≥ 40%
+Repeat shared commutes (same pair/group)	≥ 25% of completed commutes
+Post-commute "Enjoyed match" rate	≥ 60%
+Average time to first match	< 48 hours
+2. User Personas
+2.1 Primary: The Solo Walker
+Walks 10–30 minutes to work or school.
+Wants a walking buddy for safety and/or socializing.
+Values schedule flexibility (a range of departure times, not a fixed minute).
+2.2 Secondary: The Transit Rider
+Takes the T (subway/light rail) daily.
+Open to meeting someone who boards at the same station and rides the same line.
+Interested in low-commitment social interaction during the commute.
+3. User Story (End-to-End Flow)
+3.1 Onboarding
+User downloads the app.
+User authenticates via Auth0 (email/password, Google, or Apple SSO).
+User completes the Sign-Up Form:
+Full name
+Occupation
+Gender
+Interests (multi-select tags + free text)
+Profile is stored in MongoDB.
+3.2 Commute Setup
+User fills out the Commute Form:
+Time window — earliest departure and latest arrival (e.g., "Leave between 7:30–8:00 AM, arrive by 8:45 AM").
+Start location — address or pin on map.
+End location — address or pin on map.
+Mode of transportation — Walk | T (subway/rail).
+Match preference — Group (3–5 people) | Individual (1:1).
+Gender preference — Any | Same gender only.
+Commute is stored and the frontend renders the user's initial solo route on a map.
+3.3 Matching
+The matching algorithm (running on Snowflake) evaluates the new commute against all stored commutes.
+Primary signal (high weight): Geographic and temporal overlap of the shared route segment.
+Secondary signal (low weight): Interest similarity.
+Filters (hard constraints): Mode of transport, gender preference, group vs. individual preference.
+The algorithm returns ranked candidate matches with an estimated time to match surfaced in the UI.
+The frontend animates the shared commute route — showing the user's original route, the matched user(s)' route(s), and the overlapping segment highlighted.
+3.4 Group Chat & Icebreaker
+Once a match (or match group) is confirmed, the app generates a group chat.
+A Gemini-powered icebreaker bot posts an opening message tailored to the group's shared interests (pulled from each member's Interests field).
+Users introduce themselves and coordinate their first shared commute.
+3.5 Shared Commute
+On the day of the commute, the app displays the shared route map with real-time context (meeting point, estimated walk/ride time).
+A "Leave Match" button is hidden during the initial commute to encourage good-faith participation; it becomes available only after the first shared commute is completed.
+3.6 Post-Commute Review
+After the shared commute, each user is prompted: "Did you enjoy your match?"
+If Yes:
+The commute is saved to history.
+The matched user(s) are saved as "Commute Friends".
+A persistent DM conversation is created between the pair (or the group chat is preserved).
+Future commutes can be scheduled directly.
+If No:
+The user enters a new matching phase.
+The user is given the option to leave the group chat.
+The declined match is recorded so the algorithm avoids re-matching.
+4. Feature Requirements
+4.1 Authentication
+ID	Requirement	Priority
+AUTH-01	Integrate Auth0 for user authentication.	P0
+AUTH-02	Support email/password, Google OAuth, and Apple Sign-In.	P0
+AUTH-03	Issue and validate JWTs for session management.	P0
+AUTH-04	Enforce email verification before first commute match.	P1
+4.2 User Profile & Sign-Up
+ID	Requirement	Priority
+PROF-01	Collect name, occupation, gender, and interests at sign-up.	P0
+PROF-02	Interests field supports both pre-defined tags and free-text input.	P0
+PROF-03	Users can edit profile fields at any time from Settings.	P1
+PROF-04	Store all profile data in MongoDB users collection.	P0
+4.3 Commute Form & Storage
+ID	Requirement	Priority
+COMM-01	Capture time window (earliest departure, latest arrival).	P0
+COMM-02	Capture start and end locations via address search or map pin drop.	P0
+COMM-03	Capture mode of transportation: Walk or T.	P0
+COMM-04	Capture match preference: Group or Individual.	P0
+COMM-05	Capture gender preference for matching.	P0
+COMM-06	Store commute records in MongoDB commutes collection with geospatial indexes.	P0
+COMM-07	Allow users to save multiple commutes (e.g., morning vs. evening).	P1
+4.4 Matching Algorithm
+ID	Requirement	Priority
+ALGO-01	Deploy matching algorithm on Snowflake for scalable batch + near-real-time processing.	P0
+ALGO-02	Compute route overlap score using geospatial segment intersection (high weight).	P0
+ALGO-03	Compute interest similarity score using tag-based cosine similarity or Jaccard index (low weight).	P0
+ALGO-04	Apply hard-constraint filters: transport mode, gender preference, group/individual preference, time window overlap.	P0
+ALGO-05	Return ranked list of candidate matches with a composite score.	P0
+ALGO-06	Expose estimated time to match based on current queue depth and commute density.	P1
+ALGO-07	Support configurable match group size (default: 2 for individual, 3–5 for group).	P0
+ALGO-08	Exclude previously declined matches from future results.	P0
+ALGO-09	Re-run matching when a user enters the "new matching phase" after a negative review.	P0
+4.5 Route Visualization
+ID	Requirement	Priority
+VIZ-01	Display the user's solo commute route on a map upon commute form submission.	P0
+VIZ-02	On match, animate the transition from solo route → shared commute route, highlighting the overlapping segment.	P0
+VIZ-03	Show the meeting point and split point clearly on the shared route map.	P0
+VIZ-04	Display estimated walk/ride time for the shared segment.	P1
+VIZ-05	Use Mapbox GL or Google Maps SDK for rendering.	P0
+4.6 Group Chat & Icebreaker
+ID	Requirement	Priority
+CHAT-01	Auto-generate a group chat room when a match (or match group) is confirmed.	P0
+CHAT-02	Integrate Gemini API to generate a personalized icebreaker message based on group members' interests.	P0
+CHAT-03	Support text messaging within the group chat.	P0
+CHAT-04	Allow users to leave a group chat (button available only after first shared commute).	P0
+CHAT-05	Convert group chat to a persistent DM if both users select "Enjoyed match."	P0
+CHAT-06	Support push notifications for new chat messages.	P1
+4.7 Post-Commute Review
+ID	Requirement	Priority
+REV-01	Prompt each user with "Did you enjoy your match?" after a shared commute.	P0
+REV-02	On positive review: save commute to history, save contact as "Commute Friend," create DM.	P0
+REV-03	On negative review: enter new matching phase, surface "Leave Group Chat" option.	P0
+REV-04	Store review data for algorithm feedback loop (improve future match quality).	P1
+4.8 Queue & Match Lifecycle
+ID	Requirement	Priority
+QUE-01	Users are placed in a matching queue upon commute submission.	P0
+QUE-02	Display queue status and estimated match time in the UI.	P1
+QUE-03	Notify user via push notification when a match is found.	P0
+QUE-04	"Leave Match" button is hidden until after the first shared commute is completed.	P0
+5. Technical Architecture
+5.1 High-Level Architecture
+┌──────────────┐      ┌───────────────┐      ┌──────────────────┐
+│  Mobile App  │◄────►│   API Server  │◄────►│     MongoDB      │
+│ (React Native│      │  (Node/Express│      │ (Users, Commutes,│
+│  or Flutter) │      │   or FastAPI) │      │  Chats, Reviews) │
+└──────┬───────┘      └───────┬───────┘      └──────────────────┘
+       │                      │
+       │                      ├──────────► Auth0 (AuthN/AuthZ)
+       │                      │
+       │                      ├──────────► Snowflake (Matching Algorithm)
+       │                      │
+       │                      ├──────────► Gemini API (Icebreaker Gen)
+       │                      │
+       │                      └──────────► Mapbox / Google Maps (Routing)
+       │
+       └──────────────────────────────────► Push Notification Service
+                                            (FCM / APNs)
+5.2 Data Model (MongoDB)
+users Collection
+
+json
+{
+  "_id": "ObjectId",
+  "auth0Id": "string",
+  "name": "string",
+  "occupation": "string",
+  "gender": "string",
+  "interests": ["string"],
+  "commuteFriends": ["ObjectId"],
+  "createdAt": "datetime",
+  "updatedAt": "datetime"
+}
+commutes Collection
+
+json
+{
+  "_id": "ObjectId",
+  "userId": "ObjectId",
+  "startLocation": { "type": "Point", "coordinates": [lng, lat] },
+  "endLocation": { "type": "Point", "coordinates": [lng, lat] },
+  "routePolyline": "encoded string",
+  "earliestDeparture": "time",
+  "latestArrival": "time",
+  "transportMode": "walk | transit",
+  "matchPreference": "group | individual",
+  "genderPreference": "any | same",
+  "status": "queued | matched | completed",
+  "createdAt": "datetime"
+}
+matches Collection
+
+json
+{
+  "_id": "ObjectId",
+  "participants": ["ObjectId"],
+  "sharedSegment": { "type": "LineString", "coordinates": [[lng, lat]] },
+  "overlapScore": "float",
+  "interestScore": "float",
+  "compositeScore": "float",
+  "chatRoomId": "ObjectId",
+  "status": "pending | active | completed | declined",
+  "createdAt": "datetime"
+}
+chatRooms Collection
+
+json
+{
+  "_id": "ObjectId",
+  "matchId": "ObjectId",
+  "participants": ["ObjectId"],
+  "messages": [
+    {
+      "senderId": "ObjectId | 'system'",
+      "body": "string",
+      "timestamp": "datetime"
+    }
+  ],
+  "type": "group | dm",
+  "createdAt": "datetime"
+}
+reviews Collection
+
+json
+{
+  "_id": "ObjectId",
+  "matchId": "ObjectId",
+  "reviewerId": "ObjectId",
+  "enjoyed": "boolean",
+  "createdAt": "datetime"
+}
+5.3 Matching Algorithm (Snowflake)
+Input: All commutes with status: queued.
+
+Process:
+
+Temporal filter — Find commute pairs/groups with overlapping time windows (earliest departure of A ≤ latest arrival of B and vice versa).
+Geospatial overlap — For each candidate pair, compute the shared route segment using polyline intersection. Score = shared_distance / min(route_A_distance, route_B_distance).
+Interest similarity — Jaccard similarity on interest tags. Score = |A ∩ B| / |A ∪ B|.
+Composite score — 0.8 * overlap_score + 0.2 * interest_score.
+Constraint enforcement — Discard candidates that violate hard filters (transport mode, gender preference, group size, previously declined).
+Ranking & assignment — Greedy assignment: highest-scoring unmatched pair/group first. For group matching, iteratively add the next best-fitting user until group size is met.
+Output: Match records with participants, shared segment geometry, and composite scores.
+
+Scheduling: Runs every 15 minutes (batch) with an on-demand trigger when a new commute is submitted.
+
+5.4 Third-Party Integrations
+Service	Purpose
+Auth0	Authentication and identity management
+MongoDB Atlas	Primary data store
+Snowflake	Matching algorithm compute
+Google Gemini API	Icebreaker message generation
+Mapbox GL JS / Google Maps SDK	Route calculation, map rendering, polyline operations
+Firebase Cloud Messaging / APNs	Push notifications
+6. UI/UX Wireframe Descriptions
+6.1 Sign-Up Screen
+Auth0 universal login (Google / Apple / Email).
+On first login: multi-step form — Name → Occupation → Gender → Interests (tag picker + free text).
+6.2 Commute Setup Screen
+Map occupies top 60% of screen with draggable start/end pins.
+Bottom sheet contains: time range picker, transport mode toggle (Walk / T), match type toggle (Group / Individual), gender preference selector.
+"Find My Match" CTA button.
+6.3 Matching / Queue Screen
+Animated loading state with estimated match time.
+Map shows the user's solo route in a muted color.
+On match found: animated transition — matched user's route fades in, shared segment highlights in an accent color, meeting point pin drops.
+6.4 Group Chat Screen
+Standard chat interface.
+Pinned icebreaker message at top (generated by Gemini).
+Shared route map preview card at top of chat.
+"Leave Chat" button appears only after first commute is marked complete.
+6.5 Post-Commute Review Screen
+Full-screen prompt: "How was your commute with [Name(s)]?"
+Two large buttons: thumbs up (Enjoyed) / thumbs down (Not for me).
+On "Enjoyed": confetti animation → "Saved as Commute Friend!" → navigate to DM.
+On "Not for me": "We'll find you a better match" → navigate to queue.
+6.6 Commute Friends / Contacts Screen
+List of saved Commute Friends with last shared commute date.
+Tap to open DM or schedule a new shared commute.
+7. Non-Functional Requirements
+Category	Requirement
+Performance	Match algorithm completes a batch run for 10,000 queued commutes in < 60 seconds on Snowflake.
+Latency	API response times < 300 ms (p95) for non-algorithm endpoints.
+Availability	99.9% uptime for API and chat services.
+Scalability	Architecture supports 100K users with horizontal API scaling and Snowflake elastic compute.
+Security	All data encrypted in transit (TLS 1.3) and at rest (MongoDB Atlas encryption). Auth0 handles credential storage.
+Privacy	Users can delete their account and all associated data. Location data is never shared with third parties. Precise home/work addresses are never exposed to other users — only meeting points and shared segments.
+Accessibility	WCAG 2.1 AA compliance for the mobile app.
+8. Milestones & Roadmap
+Phase 1 — MVP (Weeks 1–8)
+Auth0 integration + sign-up form
+Commute form + MongoDB storage with geospatial indexing
+Matching algorithm v1 on Snowflake (overlap scoring, hard filters)
+Solo and shared route map visualization
+Basic group chat with Gemini icebreaker
+Post-commute review flow (enjoy / decline)
+Push notifications for match found
+Phase 2 — Polish & Feedback Loop (Weeks 9–12)
+Estimated match time UI
+Route animation (solo → shared transition)
+Review data fed back into algorithm (negative matches excluded, positive matches weighted)
+Commute Friends list and DM persistence
+Multiple saved commutes per user
+Phase 3 — Growth & Optimization (Weeks 13–20)
+Algorithm v2: incorporate review feedback, time-of-day popularity weighting, recurring commute detection
+In-app safety features (share live location with emergency contact, report user)
+Analytics dashboard (match rate, retention, commute frequency)
+Expansion to additional transit modes (bus, bike)
+9. Risks & Mitigations
+Risk	Likelihood	Impact	Mitigation
+Low user density in early launch markets → poor match quality	High	High	Geo-fence launch to 1–2 dense neighborhoods/campuses; use waitlist to build density before activating matching.
+Safety concerns with meeting strangers	Medium	High	Verify identity via Auth0 social login; add optional photo verification; post-commute review builds trust signals; delayed "Leave Match" button ensures at least one interaction.
+Snowflake cost scaling with user growth	Medium	Medium	Optimize batch scheduling; cache recent match results; evaluate migration to a lower-cost compute layer if needed.
+Gemini icebreaker generates low-quality or inappropriate content	Low	Medium	Apply content moderation filter on Gemini output; fall back to templated icebreakers if flagged.
+10. Open Questions
+Monetization model — Free with premium features (priority matching, larger group sizes)? Or fully free and grant/institution-funded?
+Recurring commutes — Should users be able to set a weekly schedule (e.g., "M/W/F, 8:00–8:30 AM") rather than one-off commute entries?
+Safety verification — Is Auth0 social login sufficient, or do we need additional identity verification (e.g., student ID, employer email)?
+Multi-modal commutes — Should MVP support a single commute that combines walking and transit (e.g., walk to station → ride T → walk to office)?
+Match consent — Should both users explicitly accept a match before the group chat is created, or is it auto-created with an opt-out?
+Appendix A: Matching Algorithm Weight Reference
+Signal	Weight	Type
+Route overlap (shared distance / min route distance)	0.80	Continuous, 0–1
+Interest similarity (Jaccard index on tags)	0.20	Continuous, 0–1
+Transport mode match	—	Hard filter (must match)
+Time window overlap	—	Hard filter (must overlap)
+Gender preference	—	Hard filter (must satisfy both users)
+Group/individual preference	—	Hard filter (must match)
+Previously declined match	—	Hard filter (excluded)

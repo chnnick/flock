@@ -1,22 +1,7 @@
-# Environment & Secrets
-.env
-.env.local
-.env.*.local
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# Python (API)
-api/venv/
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-htmlcov/
-coverage.xml
-
-# Node (Mobile)
+# dependencies
 node_modules/
-npm-debug.log*
 
 # Expo / React Native
 mobile/.expo/
@@ -38,5 +23,34 @@ mobile/ios/
 .idea/
 *.swp
 *.swo
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
 .DS_Store
-Thumbs.db
+*.pem
+
+# local env files
+.env
+.env*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+*.egg-info/
+.eggs/
+
+# typescript
+*.tsbuildinfo
+.vercel
+
+.env

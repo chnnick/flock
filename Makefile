@@ -27,6 +27,17 @@ run-api: ## Start FastAPI server
 run-mobile: ## Start Expo dev server
 	cd mobile && npx expo start
 
+test: # TODO: add tests
+
+test-connection: ## Test MongoDB connection
+	cd api && . venv/bin/activate && python -m src.tests.test_connection
+
+test-api: ## Run API tests
+	cd api && . venv/bin/activate && pytest
+
+test-mobile: # TODO: add tests
+	cd mobile
+
 # Utilities
 clean: ## Remove generated files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

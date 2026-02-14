@@ -20,6 +20,7 @@ function RootLayoutNav() {
       <Stack.Screen name="commute-setup" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="commute-detail" />
       <Stack.Screen name="edit-interests" />
+      <Stack.Screen name="edit-profile" />
       <Stack.Screen name="chat/[id]" />
     </Stack>
   );

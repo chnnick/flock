@@ -10,7 +10,7 @@ import { useApp } from '@/contexts/AppContext';
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const { user, commuteFriends, matches, logout } = useApp();
+  const { user, commuteFriends, matches, logout, removeCommuteFriend } = useApp();
 
   const completedCommutes = matches.filter(m => m.status === 'completed' || m.status === 'active').length;
 
@@ -96,6 +96,16 @@ export default function ProfileScreen() {
                     <Text style={styles.friendName}>{friend.name}</Text>
                     <Text style={styles.friendOccupation}>{friend.occupation}</Text>
                   </View>
+                  <Pressable
+                    style={({ pressed }) => [styles.unfriendButton, pressed && { opacity: 0.7 }]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      removeCommuteFriend(friend.id);
+                    }}
+                    accessibilityLabel="Unfriend"
+                  >
+                    <Ionicons name="person-remove-outline" size={22} color={Colors.error} />
+                  </Pressable>
                 </View>
               ))}
             </View>
@@ -262,6 +272,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_400Regular',
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  unfriendButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: Colors.error + '12',
   },
   settingsSection: {
     marginBottom: 20,

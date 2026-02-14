@@ -92,6 +92,7 @@ interface AppContextValue {
   acceptMatch: (matchId: string) => Promise<void>;
   declineMatch: (matchId: string) => Promise<void>;
   sendMessage: (chatRoomId: string, body: string) => Promise<void>;
+  deleteChatRoom: (chatRoomId: string) => Promise<void>;
   submitReview: (matchId: string, enjoyed: boolean) => Promise<void>;
   addCommuteFriend: (profile: MatchProfile) => Promise<void>;
   removeCommuteFriend: (profileId: string) => Promise<void>;
@@ -372,6 +373,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
   }, [matches]);
 
+  const deleteChatRoom = useCallback(async (chatRoomId: string) => {
+    const updatedChats = chatRooms.filter(r => r.id !== chatRoomId);
+    setChatRooms(updatedChats);
+    await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
+    const match = matches.find(m => m.chatRoomId === chatRoomId);
+    if (match) {
+      const updatedMatches = matches.map(m =>
+        m.chatRoomId === chatRoomId ? { ...m, status: 'declined' as const } : m
+      );
+      setMatches(updatedMatches);
+      await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
+    }
+  }, [chatRooms, matches]);
+
   const sendMessage = useCallback(async (chatRoomId: string, body: string) => {
     if (!user) return;
     const newMessage: ChatMessage = {
@@ -516,6 +531,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     acceptMatch,
     declineMatch,
     sendMessage,
+    deleteChatRoom,
     submitReview,
     addCommuteFriend,
     removeCommuteFriend,
@@ -524,7 +540,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     triggerMatching,
     logout,
   }), [user, commute, matches, chatRooms, commuteFriends, pendingReview, isLoading, isOnboarded,
-    setUser, setCommute, acceptMatch, declineMatch, sendMessage, submitReview, addCommuteFriend, removeCommuteFriend, completeOnboarding,
+    setUser, setCommute, acceptMatch, declineMatch, sendMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, completeOnboarding,
     clearPendingReview, triggerMatching, logout]);
 
   return (

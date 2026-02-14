@@ -108,6 +108,20 @@ export default function CommuteSetupScreen() {
               placeholder="Search for a location..."
               placeholderTextColor={Colors.textTertiary}
             />
+            {startSearch.length > 0 && (
+              <Pressable
+                onPress={() => {
+                  setStartSearch('');
+                  setStartLocation(null);
+                  setShowStartResults(false);
+                  Haptics.selectionAsync();
+                }}
+                hitSlop={8}
+                style={({ pressed }) => [styles.clearButton, pressed && { opacity: 0.6 }]}
+              >
+                <Ionicons name="close-circle" size={22} color={Colors.textTertiary} />
+              </Pressable>
+            )}
           </View>
           {showStartResults && startSearch.length > 0 && (
             <View style={styles.locationResults}>
@@ -146,6 +160,20 @@ export default function CommuteSetupScreen() {
               placeholder="Search for a location..."
               placeholderTextColor={Colors.textTertiary}
             />
+            {endSearch.length > 0 && (
+              <Pressable
+                onPress={() => {
+                  setEndSearch('');
+                  setEndLocation(null);
+                  setShowEndResults(false);
+                  Haptics.selectionAsync();
+                }}
+                hitSlop={8}
+                style={({ pressed }) => [styles.clearButton, pressed && { opacity: 0.6 }]}
+              >
+                <Ionicons name="close-circle" size={22} color={Colors.textTertiary} />
+              </Pressable>
+            )}
           </View>
           {showEndResults && endSearch.length > 0 && (
             <View style={styles.locationResults}>
@@ -350,6 +378,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Outfit_400Regular',
     color: Colors.text,
+  },
+  clearButton: {
+    padding: 4,
+    marginRight: -4,
   },
   locationResults: {
     backgroundColor: Colors.card,

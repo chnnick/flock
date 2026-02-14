@@ -7,12 +7,17 @@ Two-folder layout:
 
 ## Setup
 
-```bash
-# API (from repo root)
-cd api && python3 -m venv venv && venv/bin/pip install -r requirements.txt
+From repo root (one-time after clone):
 
-# Mobile (from repo root; also runs postinstall)
-npm install
+```bash
+npm run setup        # API venv + pip install, then mobile npm install + patch-package
+```
+
+Or step by step:
+
+```bash
+npm run setup:api    # api/venv + pip install -r requirements.txt
+npm run setup:mobile # npm install (installs mobile deps via postinstall)
 ```
 
 ## Run

@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# root only (thin package.json; real lockfile is mobile/package-lock.json)
+/package-lock.json
+
 # Expo / React Native
 mobile/.expo/
 mobile/dist/

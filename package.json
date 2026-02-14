@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "postinstall": "cd mobile && npm install && patch-package",
+    "postinstall": "cd mobile && npm install && npx patch-package",
+    "setup": "npm run setup:api && npm run setup:mobile",
+    "setup:api": "cd api && python3 -m venv venv && venv/bin/pip install -r requirements.txt",
+    "setup:mobile": "npm install",
     "start": "cd mobile && npx expo start",
     "run:api": "cd api && . venv/bin/activate && uvicorn src.main:app --reload --port 8000",
     "run:mobile": "cd mobile && npx expo start",

@@ -96,6 +96,7 @@ interface AppContextValue {
   submitReview: (matchId: string, enjoyed: boolean) => Promise<void>;
   addCommuteFriend: (profile: MatchProfile) => Promise<void>;
   removeCommuteFriend: (profileId: string) => Promise<void>;
+  getOrCreateChatRoomForFriend: (friend: MatchProfile) => string;
   completeOnboarding: () => Promise<void>;
   clearPendingReview: () => void;
   triggerMatching: () => Promise<void>;
@@ -494,6 +495,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem('flock_friends', JSON.stringify(newFriends));
   }, [commuteFriends]);
 
+  const getOrCreateChatRoomForFriend = useCallback((friend: MatchProfile): string => {
+    const existing = chatRooms.find(r =>
+      r.type === 'dm' && r.participants.length === 1 && r.participants[0].id === friend.id
+    );
+    if (existing) return existing.id;
+    const icebreaker = user
+      ? generateIcebreaker([user.interests, friend.interests])
+      : "You're connected! Say hi and plan your next commute together.";
+    const systemMessage = {
+      id: Crypto.randomUUID(),
+      senderId: 'system',
+      senderName: 'Flock',
+      body: icebreaker,
+      timestamp: new Date().toISOString(),
+      isSystem: true,
+    };
+    const newRoom: ChatRoom = {
+      id: Crypto.randomUUID(),
+      matchId: Crypto.randomUUID(),
+      participants: [friend],
+      messages: [systemMessage],
+      type: 'dm',
+      lastMessage: icebreaker,
+      lastMessageTime: systemMessage.timestamp,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...chatRooms, newRoom];
+    setChatRooms(updated);
+    AsyncStorage.setItem('flock_chats', JSON.stringify(updated));
+    return newRoom.id;
+  }, [chatRooms, user]);
+
   const completeOnboarding = useCallback(async () => {
     setIsOnboarded(true);
     await AsyncStorage.setItem('flock_onboarded', 'true');
@@ -535,12 +568,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     submitReview,
     addCommuteFriend,
     removeCommuteFriend,
+    getOrCreateChatRoomForFriend,
     completeOnboarding,
     clearPendingReview,
     triggerMatching,
     logout,
   }), [user, commute, matches, chatRooms, commuteFriends, pendingReview, isLoading, isOnboarded,
-    setUser, setCommute, acceptMatch, declineMatch, sendMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, completeOnboarding,
+    setUser, setCommute, acceptMatch, declineMatch, sendMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, getOrCreateChatRoomForFriend, completeOnboarding,
     clearPendingReview, triggerMatching, logout]);
 
   return (

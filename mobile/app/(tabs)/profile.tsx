@@ -10,7 +10,7 @@ import { useApp } from '@/contexts/AppContext';
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const { user, commuteFriends, matches, logout, removeCommuteFriend } = useApp();
+  const { user, commuteFriends, matches, logout, removeCommuteFriend, getOrCreateChatRoomForFriend } = useApp();
 
   const completedCommutes = matches.filter(m => m.status === 'completed' || m.status === 'active').length;
 
@@ -88,7 +88,15 @@ export default function ProfileScreen() {
             <Text style={styles.sectionTitle}>Commute Friends</Text>
             <View style={styles.friendsList}>
               {commuteFriends.map(friend => (
-                <View key={friend.id} style={styles.friendCard}>
+                <Pressable
+                  key={friend.id}
+                  style={({ pressed }) => [styles.friendCard, pressed && { backgroundColor: Colors.surface }]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    const roomId = getOrCreateChatRoomForFriend(friend);
+                    router.push({ pathname: '/chat/[id]', params: { id: roomId } });
+                  }}
+                >
                   <View style={[styles.friendAvatar, { backgroundColor: friend.avatar }]}>
                     <Text style={styles.friendAvatarText}>{friend.name[0]}</Text>
                   </View>
@@ -106,7 +114,7 @@ export default function ProfileScreen() {
                   >
                     <Ionicons name="person-remove-outline" size={22} color={Colors.error} />
                   </Pressable>
-                </View>
+                </Pressable>
               ))}
             </View>
           </Animated.View>

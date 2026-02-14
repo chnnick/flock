@@ -125,6 +125,20 @@ export default function ProfileScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.settingsItem, pressed && { backgroundColor: Colors.surface }]}
+            onPress={() => {
+                    Haptics.selectionAsync();
+                    router.push('/edit-interests');
+                  }}
+          >
+            <View style={[styles.settingsIcon, { backgroundColor: Colors.accent + '20' }]}>
+              <Ionicons name="heart-outline" size={20} color={Colors.accent} />
+            </View>
+            <Text style={styles.settingsText}>Edit Interests</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.settingsItem, pressed && { backgroundColor: Colors.surface }]}
             onPress={() => router.push('/commute-setup')}
           >
             <View style={[styles.settingsIcon, { backgroundColor: Colors.primary + '15' }]}>

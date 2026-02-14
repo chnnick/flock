@@ -6,15 +6,28 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
+  const explicitBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (explicitBaseUrl) {
+    return explicitBaseUrl.endsWith("/") ? explicitBaseUrl : `${explicitBaseUrl}/`;
+  }
+
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+    throw new Error("Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_DOMAIN");
   }
 
   let url = new URL(`https://${host}`);
 
   return url.href;
+}
+
+function getAuthHeader(): Record<string, string> {
+  const token = process.env.EXPO_PUBLIC_API_TOKEN;
+  if (!token) {
+    return {};
+  }
+  return { Authorization: `Bearer ${token}` };
 }
 
 async function throwIfResNotOk(res: Response) {
@@ -34,7 +47,10 @@ export async function apiRequest(
 
   const res = await fetch(url.toString(), {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(data ? { "Content-Type": "application/json" } : {}),
+      ...getAuthHeader(),
+    },
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -53,6 +69,9 @@ export const getQueryFn: <T>(options: {
     const url = new URL(queryKey.join("/") as string, baseUrl);
 
     const res = await fetch(url.toString(), {
+      headers: {
+        ...getAuthHeader(),
+      },
       credentials: "include",
     });
 

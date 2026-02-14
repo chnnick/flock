@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.chat.router import router as chats_router
 from src.db.mongodb import init_db
 from src.commutes.router import router as commutes_router
 from src.matching.router import router as matching_router
@@ -37,6 +38,7 @@ app.add_middleware(
 app.include_router(users_router, prefix="/api", tags=["users"])
 app.include_router(commutes_router, prefix="/api", tags=["commutes"])
 app.include_router(matching_router, prefix="/api", tags=["matching"])
+app.include_router(chats_router, prefix="/api", tags=["chats"])
 
 
 @app.get("/api/health")

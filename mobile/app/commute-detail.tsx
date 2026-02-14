@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
-import { getRouteForCommute } from '@/constants/sampleRoutes';
+import { CommuteRoute } from '@/constants/sampleRoutes';
 import CommuteMap from '@/components/CommuteMap';
 
 export default function CommuteDetailScreen() {
@@ -31,9 +31,34 @@ export default function CommuteDetailScreen() {
     );
   }
 
-  const routeData = getRouteForCommute(commute.startLocation.name, commute.endLocation.name, commute.transportMode);
-
   const activeMatches = matches.filter(m => m.status === 'active' || m.status === 'pending');
+  const routeData: CommuteRoute = {
+    id: commute.id,
+    segments: commute.routeSegments.length > 0 ? commute.routeSegments : [{
+      type: commute.transportMode,
+      coordinates: [commute.startLocation, commute.endLocation].map((point) => [point.lat, point.lng] as [number, number]),
+      label: `${commute.startLocation.name} to ${commute.endLocation.name}`,
+    }],
+    startName: commute.startLocation.name,
+    endName: commute.endLocation.name,
+    totalDuration: 'N/A',
+    walkDuration: commute.transportMode === 'walk' ? 'N/A' : '0 min',
+    transitDuration: commute.transportMode === 'transit' ? 'N/A' : '0 min',
+    matchOverlaps: activeMatches.map((match) => {
+      const participant = match.participants[0];
+      const meetPoint: [number, number] = [match.sharedSegmentStart.lat, match.sharedSegmentStart.lng];
+      const splitPoint: [number, number] = [match.sharedSegmentEnd.lat, match.sharedSegmentEnd.lng];
+      return {
+        matchName: participant?.name ?? 'Commuter',
+        matchAvatar: participant?.avatar ?? Colors.primary,
+        coordinates: [meetPoint, splitPoint],
+        meetPoint,
+        splitPoint,
+        meetPointName: match.sharedSegmentStart.name,
+        splitPointName: match.sharedSegmentEnd.name,
+      };
+    }),
+  };
 
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>

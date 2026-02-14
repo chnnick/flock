@@ -156,7 +156,10 @@ export default function HomeScreen() {
               <Pressable
                 key={match.id}
                 style={({ pressed }) => [styles.activeMatchCard, pressed && { opacity: 0.9 }]}
-                onPress={() => router.push({ pathname: '/chat/[id]', params: { id: match.chatRoomId } })}
+                onPress={() => {
+                  if (!match.chatRoomId) return;
+                  router.push({ pathname: '/chat/[id]', params: { id: match.chatRoomId } });
+                }}
               >
                 <View style={styles.matchAvatarRow}>
                   {match.participants.map(p => (

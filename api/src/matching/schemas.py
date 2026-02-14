@@ -25,12 +25,21 @@ class DecisionResponse(BaseModel):
     pass_cooldown_until: datetime | None
 
 
+class MatchParticipantProfileResponse(BaseModel):
+    auth0_id: str
+    name: str
+    occupation: str
+    gender: str
+    interests: list[str]
+
+
 class MatchSuggestionResponse(BaseModel):
     id: str
     source: Literal["suggested", "queue_assigned"]
     kind: Literal["individual", "group"]
     status: Literal["suggested", "assigned", "active", "completed"]
-    participants: list[str]
+    participants: list[MatchParticipantProfileResponse]
+    participant_auth0_ids: list[str]
     transport_mode: Literal["walk", "transit"]
     scores: MatchScoresResponse
     compatibility_percent: int

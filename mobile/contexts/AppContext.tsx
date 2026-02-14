@@ -1,6 +1,23 @@
-import { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
+import {
+  acceptSuggestion,
+  createMeCommute,
+  createMeUser,
+  getActive,
+  getAssignments,
+  getChatRoom,
+  getChats,
+  getMeCommute,
+  getMeUser,
+  getSuggestions,
+  passSuggestion,
+  patchMeUser,
+  runMatching,
+  sendChatMessage,
+} from '@/lib/backend-api';
+import { ApiCommuteResponse, ApiMatchParticipantProfile, ApiMatchSuggestion, ApiUser } from '@/lib/api-types';
 
 export interface UserProfile {
   id: string;
@@ -22,8 +39,15 @@ export interface Commute {
   transportMode: 'walk' | 'transit';
   matchPreference: 'group' | 'individual';
   genderPreference: 'any' | 'same';
-  status: 'queued' | 'matched' | 'completed';
+  status: 'queued' | 'paused' | 'matched' | 'completed';
   createdAt: string;
+  routeSegments: {
+    type: 'walk' | 'transit';
+    coordinates: [number, number][];
+    label?: string;
+    transitLine?: string;
+  }[];
+  routeCoordinates: [number, number][];
 }
 
 export interface MatchProfile {
@@ -46,9 +70,9 @@ export interface Match {
   transportMode: 'walk' | 'transit';
   estimatedTime: string;
   status: 'pending' | 'active' | 'completed' | 'declined';
-  chatRoomId: string;
+  chatRoomId?: string;
   createdAt: string;
-  maxCapacity?: number;  // e.g. 4 for groups; undefined = individual
+  maxCapacity?: number;
 }
 
 export interface ChatMessage {
@@ -105,171 +129,151 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-const SAMPLE_INTERESTS = [
-  'Reading', 'Podcasts', 'Running', 'Cooking', 'Photography',
-  'Music', 'Hiking', 'Coffee', 'Tech', 'Art', 'Yoga', 'Travel',
-  'Gaming', 'Cycling', 'Movies', 'Gardening', 'Writing', 'Dance',
-];
+const AVATAR_COLORS = ['#FF6B35', '#004E64', '#25A18E', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981'];
 
-const SAMPLE_NAMES = [
-  'Alex Chen', 'Jordan Rivera', 'Sam Parker', 'Morgan Lee', 'Taylor Kim',
-  'Casey Brooks', 'Riley Patel', 'Quinn Johnson', 'Avery Torres', 'Drew Martinez',
-  'Jamie Williams', 'Skyler Davis', 'Reese Thompson', 'Blake Anderson', 'Cameron Wright',
-];
-
-const SAMPLE_OCCUPATIONS = [
-  'Software Engineer', 'Graphic Designer', 'Teacher', 'Nurse', 'Marketing Manager',
-  'Data Analyst', 'Product Manager', 'Architect', 'Accountant', 'Writer',
-  'Photographer', 'Researcher', 'Chef', 'Consultant', 'Student',
-];
-
-const SAMPLE_LOCATIONS = [
-  { lat: 42.3601, lng: -71.0589, name: 'Downtown Crossing' },
-  { lat: 42.3554, lng: -71.0640, name: 'Boston Common' },
-  { lat: 42.3516, lng: -71.0666, name: 'Back Bay' },
-  { lat: 42.3625, lng: -71.0567, name: 'Government Center' },
-  { lat: 42.3656, lng: -71.0618, name: 'North End' },
-  { lat: 42.3467, lng: -71.0972, name: 'Brookline Village' },
-  { lat: 42.3519, lng: -71.0552, name: 'South Station' },
-  { lat: 42.3662, lng: -71.0621, name: 'Haymarket' },
-  { lat: 42.3526, lng: -71.0550, name: 'Financial District' },
-  { lat: 42.3395, lng: -71.0943, name: 'Coolidge Corner' },
-];
-
-function pickRandom<T>(arr: T[], count: number): T[] {
-  const shuffled = [...arr].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('404:');
 }
 
-function generateMatchProfiles(count: number, userGender?: string): MatchProfile[] {
-  const genders = ['male', 'female', 'non-binary'] as const;
-  const avatarColors = ['#FF6B35', '#004E64', '#25A18E', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981'];
-  const shuffledNames = [...SAMPLE_NAMES].sort(() => Math.random() - 0.5);
+function minuteToDisplay(minute: number): string {
+  const normalized = ((minute % 1440) + 1440) % 1440;
+  const hours24 = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  const ampm = hours24 >= 12 ? 'PM' : 'AM';
+  const hours12 = hours24 % 12 || 12;
+  return `${hours12}:${mins.toString().padStart(2, '0')} ${ampm}`;
+}
 
-  return Array.from({ length: count }, (_, i) => {
-    const baseName = shuffledNames[i % SAMPLE_NAMES.length];
-    const name = i >= SAMPLE_NAMES.length ? `${baseName.split(' ')[0]} ${Math.floor(i / SAMPLE_NAMES.length) + 1}` : baseName;
+function displayToMinute(value: string): number {
+  const trimmed = value.trim().toUpperCase();
+  const match = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
+  if (!match) {
+    return 8 * 60;
+  }
+  const rawHours = Number(match[1]);
+  const mins = Number(match[2] ?? 0);
+  const ampm = match[3];
+  let hours = rawHours % 12;
+  if (ampm === 'PM') {
+    hours += 12;
+  }
+  return Math.max(0, Math.min(1439, hours * 60 + mins));
+}
 
+function avatarForId(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+function userFromApi(user: ApiUser): UserProfile {
+  return {
+    id: user.auth0_id,
+    name: user.name,
+    occupation: user.occupation,
+    gender: (user.gender as UserProfile['gender']) ?? 'prefer-not-to-say',
+    interests: user.interests ?? [],
+    commuteFriends: [],
+    createdAt: user.created_at,
+  };
+}
+
+function commuteFromApi(commute: ApiCommuteResponse): Commute {
+  return {
+    id: commute.id,
+    userId: commute.user_auth0_id,
+    startLocation: commute.start,
+    endLocation: commute.end,
+    earliestDeparture: minuteToDisplay(commute.time_window.start_minute),
+    latestArrival: minuteToDisplay(commute.time_window.end_minute),
+    transportMode: commute.transport_mode,
+    matchPreference: commute.match_preference,
+    genderPreference: commute.gender_preference,
+    status: commute.status,
+    createdAt: commute.created_at,
+    routeSegments: commute.route_segments.map((segment) => ({
+      type: segment.type,
+      coordinates: segment.coordinates,
+      label: segment.label ?? undefined,
+      transitLine: segment.transit_line ?? undefined,
+    })),
+    routeCoordinates: commute.route_coordinates,
+  };
+}
+
+function participantProfile(participantId: string, self: UserProfile | null): MatchProfile {
+  if (self && participantId === self.id) {
     return {
-      id: Crypto.randomUUID(),
-      name,
-      occupation: SAMPLE_OCCUPATIONS[Math.floor(Math.random() * SAMPLE_OCCUPATIONS.length)],
-      gender: genders[Math.floor(Math.random() * genders.length)],
-      interests: pickRandom(SAMPLE_INTERESTS, 3 + Math.floor(Math.random() * 4)),
-      avatar: avatarColors[Math.floor(Math.random() * avatarColors.length)],
+      id: self.id,
+      name: self.name,
+      occupation: self.occupation,
+      gender: self.gender,
+      interests: self.interests,
+      avatar: avatarForId(self.id),
     };
-  });
+  }
+  const suffix = participantId.slice(-4).toUpperCase();
+  return {
+    id: participantId,
+    name: `Commuter ${suffix}`,
+    occupation: 'Flock user',
+    gender: 'unknown',
+    interests: [],
+    avatar: avatarForId(participantId),
+  };
 }
 
-function generateIcebreaker(interests: string[][]): string {
-  const commonInterests = interests[0]?.filter(i =>
-    interests.some((other, idx) => idx > 0 && other.includes(i))
-  ) || [];
-
-  if (commonInterests.length > 0) {
-    const templates = [
-      `Great news - you all share a love for ${commonInterests.slice(0, 2).join(' and ')}! What's your favorite thing about it?`,
-      `Looks like ${commonInterests[0]} is something you have in common! Have any good recommendations to share?`,
-      `You're matched! I noticed you're all into ${commonInterests.slice(0, 2).join(' and ')}. Perfect conversation starters for your walk together!`,
-    ];
-    return templates[Math.floor(Math.random() * templates.length)];
+function participantProfileFromApi(participant: ApiMatchParticipantProfile, self: UserProfile | null): MatchProfile {
+  if (self && participant.auth0_id === self.id) {
+    return {
+      id: self.id,
+      name: self.name,
+      occupation: self.occupation,
+      gender: self.gender,
+      interests: self.interests,
+      avatar: avatarForId(self.id),
+    };
   }
-
-  const templates = [
-    "Welcome to your commute group! Why not share what you're currently reading or listening to?",
-    "Hey everyone! You're matched for your commute. What's the best thing that happened to you this week?",
-    "Your commute just got more interesting! Share one fun fact about yourselves to break the ice.",
-  ];
-  return templates[Math.floor(Math.random() * templates.length)];
+  return {
+    id: participant.auth0_id,
+    name: participant.name,
+    occupation: participant.occupation,
+    gender: participant.gender,
+    interests: participant.interests,
+    avatar: avatarForId(participant.auth0_id),
+  };
 }
 
-function generateMatches(userCommute: Commute, userProfile: UserProfile): Match[] {
-  const walkTimes = ['12 min', '15 min', '18 min', '22 min', '8 min', '25 min'];
-  const transitTimes = ['8 min', '12 min', '15 min', '20 min', '6 min'];
-  const times = userCommute.transportMode === 'walk' ? walkTimes : transitTimes;
+function matchFromApi(match: ApiMatchSuggestion, self: UserProfile | null): Match {
+  const others = match.participants
+    .filter((participant) => participant.auth0_id !== self?.id)
+    .map((participant) => participantProfileFromApi(participant, self));
+  const participants = others.length > 0
+    ? others
+    : match.participants.map((participant) => participantProfileFromApi(participant, self));
+  return {
+    id: match.id,
+    participants,
+    overlapScore: match.scores.overlap_score,
+    interestScore: match.scores.interest_score,
+    compositeScore: match.scores.composite_score,
+    sharedSegmentStart: match.shared_segment_start,
+    sharedSegmentEnd: match.shared_segment_end,
+    transportMode: match.transport_mode,
+    estimatedTime: `${match.estimated_time_minutes} min`,
+    status: match.status === 'active' ? 'active' : match.status === 'completed' ? 'completed' : 'pending',
+    chatRoomId: match.chat_room_id ?? undefined,
+    createdAt: match.created_at,
+    maxCapacity: match.kind === 'group' ? 4 : undefined,
+  };
+}
 
-  if (userCommute.matchPreference === 'individual') {
-    const count = 3 + Math.floor(Math.random() * 4);
-    const profiles = generateMatchProfiles(count, userProfile.gender);
-
-    return profiles.map(profile => {
-      const overlapScore = 0.4 + Math.random() * 0.55;
-      const commonInterests = profile.interests.filter(i => userProfile.interests.includes(i));
-      const union = new Set([...profile.interests, ...userProfile.interests]);
-      const interestScore = commonInterests.length / union.size;
-      const compositeScore = 0.8 * overlapScore + 0.2 * interestScore;
-
-      const startIdx = Math.floor(Math.random() * SAMPLE_LOCATIONS.length);
-      let endIdx = startIdx;
-      while (endIdx === startIdx) {
-        endIdx = Math.floor(Math.random() * SAMPLE_LOCATIONS.length);
-      }
-
-      const chatRoomId = Crypto.randomUUID();
-      const matchId = Crypto.randomUUID();
-
-      return {
-        id: matchId,
-        participants: [profile],
-        overlapScore,
-        interestScore,
-        compositeScore,
-        sharedSegmentStart: SAMPLE_LOCATIONS[startIdx],
-        sharedSegmentEnd: SAMPLE_LOCATIONS[endIdx],
-        transportMode: userCommute.transportMode,
-        estimatedTime: times[Math.floor(Math.random() * times.length)],
-        status: 'pending' as const,
-        chatRoomId,
-        createdAt: new Date().toISOString(),
-      };
-    }).sort((a, b) => b.compositeScore - a.compositeScore);
-  }
-
-  // Group matches
-  const groupCount = 3 + Math.floor(Math.random() * 3);  // 3–5 groups
-  const allProfiles = generateMatchProfiles(groupCount * 4, userProfile.gender);  // enough for all groups
-  const matches: Match[] = [];
-  let profileIdx = 0;
-
-  for (let g = 0; g < groupCount; g++) {
-    const groupSize = 2 + Math.floor(Math.random() * 2);  // 2–3 participants (room for user to join; max 4)
-    const groupProfiles = allProfiles.slice(profileIdx, profileIdx + groupSize);
-    profileIdx += groupSize;
-
-    const overlapScore = 0.4 + Math.random() * 0.55;
-    const allInterests = groupProfiles.flatMap(p => p.interests);
-    const commonWithUser = allInterests.filter(i => userProfile.interests.includes(i));
-    const union = new Set([...allInterests, ...userProfile.interests]);
-    const interestScore = union.size > 0 ? commonWithUser.length / union.size : 0;
-    const compositeScore = 0.8 * overlapScore + 0.2 * interestScore;
-
-    const startIdx = Math.floor(Math.random() * SAMPLE_LOCATIONS.length);
-    let endIdx = startIdx;
-    while (endIdx === startIdx) {
-      endIdx = Math.floor(Math.random() * SAMPLE_LOCATIONS.length);
-    }
-
-    const chatRoomId = Crypto.randomUUID();
-    const matchId = Crypto.randomUUID();
-
-    matches.push({
-      id: matchId,
-      participants: groupProfiles,
-      overlapScore,
-      interestScore,
-      compositeScore,
-      sharedSegmentStart: SAMPLE_LOCATIONS[startIdx],
-      sharedSegmentEnd: SAMPLE_LOCATIONS[endIdx],
-      transportMode: userCommute.transportMode,
-      estimatedTime: times[Math.floor(Math.random() * times.length)],
-      status: 'pending' as const,
-      chatRoomId,
-      createdAt: new Date().toISOString(),
-      maxCapacity: 4,
-    });
-  }
-
-  return matches.sort((a, b) => b.compositeScore - a.compositeScore);
+function tomorrowDateKey(): string {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().slice(0, 10);
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -282,254 +286,239 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(false);
 
-  useEffect(() => {
-    loadData();
+  const refreshMatchesAndChats = useCallback(async (currentUser: UserProfile | null) => {
+    const [suggestedIndividual, suggestedGroup, activeIndividual, activeGroup, assignedIndividual, assignedGroup] = await Promise.all([
+      getSuggestions('individual'),
+      getSuggestions('group'),
+      getActive('individual'),
+      getActive('group'),
+      getAssignments('individual', tomorrowDateKey()),
+      getAssignments('group', tomorrowDateKey()),
+    ]);
+
+    const mergedMatches = new Map<string, ApiMatchSuggestion>();
+    [...suggestedIndividual, ...suggestedGroup, ...activeIndividual, ...activeGroup, ...assignedIndividual, ...assignedGroup]
+      .forEach((match) => mergedMatches.set(match.id, match));
+    const mappedMatches = [...mergedMatches.values()]
+      .map((item) => matchFromApi(item, currentUser))
+      .sort((a, b) => b.compositeScore - a.compositeScore);
+    setMatches(mappedMatches);
+
+    const rooms = await getChats();
+    const details = await Promise.all(rooms.map((room) => getChatRoom(room.id)));
+    const mappedRooms: ChatRoom[] = details.map((room) => {
+      const roomParticipants = room.participants
+        .filter((participant) => participant !== currentUser?.id)
+        .map((id) => participantProfile(id, currentUser));
+      return {
+        id: room.id,
+        matchId: room.match_id,
+        participants: roomParticipants,
+        messages: room.messages.map((message) => ({
+          id: message.id,
+          senderId: message.sender_auth0_id ?? 'system',
+          senderName: message.sender_name,
+          body: message.body,
+          timestamp: message.created_at,
+          isSystem: message.is_system,
+        })),
+        type: room.type,
+        lastMessage: room.last_message ?? undefined,
+        lastMessageTime: room.last_message_time ?? undefined,
+        createdAt: room.created_at,
+      };
+    });
+    setChatRooms(mappedRooms.sort((a, b) => new Date(b.lastMessageTime ?? b.createdAt).getTime() - new Date(a.lastMessageTime ?? a.createdAt).getTime()));
   }, []);
 
-  const loadData = async () => {
-    try {
-      const [userData, commuteData, matchesData, chatData, friendsData, onboarded] = await Promise.all([
-        AsyncStorage.getItem('flock_user'),
-        AsyncStorage.getItem('flock_commute'),
-        AsyncStorage.getItem('flock_matches'),
-        AsyncStorage.getItem('flock_chats'),
-        AsyncStorage.getItem('flock_friends'),
-        AsyncStorage.getItem('flock_onboarded'),
-      ]);
+  useEffect(() => {
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const friendsRaw = await AsyncStorage.getItem('flock_friends');
+        if (friendsRaw) {
+          setCommuteFriends(JSON.parse(friendsRaw));
+        }
 
-      if (userData) setUserState(JSON.parse(userData));
-      if (commuteData) setCommuteState(JSON.parse(commuteData));
-      if (matchesData) setMatches(JSON.parse(matchesData));
-      if (chatData) setChatRooms(JSON.parse(chatData));
-      if (friendsData) setCommuteFriends(JSON.parse(friendsData));
-      if (onboarded === 'true') setIsOnboarded(true);
-    } catch (e) {
-      console.error('Failed to load data:', e);
-    } finally {
-      setIsLoading(false);
+        const apiUser = await getMeUser();
+        const mappedUser = userFromApi(apiUser);
+        setUserState(mappedUser);
+        setIsOnboarded(true);
+
+        try {
+          const apiCommute = await getMeCommute();
+          setCommuteState(commuteFromApi(apiCommute));
+        } catch (error) {
+          if (!isNotFoundError(error)) {
+            throw error;
+          }
+          setCommuteState(null);
+        }
+
+        await refreshMatchesAndChats(mappedUser);
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          setUserState(null);
+          setCommuteState(null);
+          setMatches([]);
+          setChatRooms([]);
+          setIsOnboarded(false);
+        } else {
+          console.error('Failed to initialize app data', error);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    load();
+  }, [refreshMatchesAndChats]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
     }
-  };
+    const interval = setInterval(() => {
+      refreshMatchesAndChats(user).catch((error) => {
+        console.error('Background refresh failed', error);
+      });
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [refreshMatchesAndChats, user]);
 
   const setUser = useCallback(async (newUser: UserProfile) => {
-    setUserState(newUser);
-    await AsyncStorage.setItem('flock_user', JSON.stringify(newUser));
-  }, []);
+    const payload = {
+      name: newUser.name,
+      occupation: newUser.occupation,
+      gender: newUser.gender,
+      interests: newUser.interests,
+    };
+    const saved = user ? await patchMeUser(payload) : await createMeUser(payload);
+    const mapped = userFromApi(saved);
+    setUserState(mapped);
+    setIsOnboarded(true);
+  }, [user]);
 
   const setCommute = useCallback(async (newCommute: Commute) => {
-    setCommuteState(newCommute);
-    await AsyncStorage.setItem('flock_commute', JSON.stringify(newCommute));
-  }, []);
+    const startMinute = displayToMinute(newCommute.earliestDeparture);
+    const endMinute = Math.max(startMinute + 1, displayToMinute(newCommute.latestArrival));
+    const saved = await createMeCommute({
+      start: newCommute.startLocation,
+      end: newCommute.endLocation,
+      time_window: {
+        start_minute: startMinute,
+        end_minute: endMinute,
+      },
+      transport_mode: newCommute.transportMode,
+      match_preference: newCommute.matchPreference,
+      group_size_pref: newCommute.matchPreference === 'individual' ? { min: 2, max: 2 } : { min: 3, max: 4 },
+      gender_preference: newCommute.genderPreference,
+      enable_queue_flow: true,
+      enable_suggestions_flow: true,
+      queue_days_of_week: [0, 1, 2, 3, 4],
+    });
+    setCommuteState(commuteFromApi(saved));
+    await refreshMatchesAndChats(user);
+  }, [refreshMatchesAndChats, user]);
 
   const triggerMatching = useCallback(async () => {
-    if (!commute || !user) return;
-    const newMatches = generateMatches(commute, user);
-    setMatches(newMatches);
-    await AsyncStorage.setItem('flock_matches', JSON.stringify(newMatches));
-  }, [commute, user]);
+    await runMatching(true);
+    await refreshMatchesAndChats(user);
+  }, [refreshMatchesAndChats, user]);
 
   const acceptMatch = useCallback(async (matchId: string) => {
-    const match = matches.find(m => m.id === matchId);
-    if (!match || !user) return;
-
-    const updatedMatches = matches.map(m =>
-      m.id === matchId ? { ...m, status: 'active' as const } : m
-    );
-    setMatches(updatedMatches);
-    await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
-
-    const allInterests = [
-      user.interests,
-      ...match.participants.map(p => p.interests),
-    ];
-    const icebreaker = generateIcebreaker(allInterests);
-
-    const newChatRoom: ChatRoom = {
-      id: match.chatRoomId,
-      matchId,
-      participants: match.participants,
-      messages: [{
-        id: Crypto.randomUUID(),
-        senderId: 'system',
-        senderName: 'Flock',
-        body: icebreaker,
-        timestamp: new Date().toISOString(),
-        isSystem: true,
-      }],
-      type: match.participants.length > 1 ? 'group' : 'dm',
-      lastMessage: icebreaker,
-      lastMessageTime: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-    };
-
-    const updatedChats = [...chatRooms, newChatRoom];
-    setChatRooms(updatedChats);
-    await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
-  }, [matches, chatRooms, user]);
+    await acceptSuggestion(matchId);
+    await refreshMatchesAndChats(user);
+  }, [refreshMatchesAndChats, user]);
 
   const declineMatch = useCallback(async (matchId: string) => {
-    const updatedMatches = matches.map(m =>
-      m.id === matchId ? { ...m, status: 'declined' as const } : m
-    );
-    setMatches(updatedMatches);
-    await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
-  }, [matches]);
+    await passSuggestion(matchId);
+    await refreshMatchesAndChats(user);
+  }, [refreshMatchesAndChats, user]);
 
   const deleteChatRoom = useCallback(async (chatRoomId: string) => {
-    const updatedChats = chatRooms.filter(r => r.id !== chatRoomId);
-    setChatRooms(updatedChats);
-    await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
-    const match = matches.find(m => m.chatRoomId === chatRoomId);
-    if (match) {
-      const updatedMatches = matches.map(m =>
-        m.chatRoomId === chatRoomId ? { ...m, status: 'declined' as const } : m
-      );
-      setMatches(updatedMatches);
-      await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
-    }
-  }, [chatRooms, matches]);
+    setChatRooms((prev) => prev.filter((room) => room.id !== chatRoomId));
+  }, []);
 
   const sendMessage = useCallback(async (chatRoomId: string, body: string) => {
-    if (!user) return;
-    const newMessage: ChatMessage = {
-      id: Crypto.randomUUID(),
-      senderId: user.id,
-      senderName: user.name,
-      body,
-      timestamp: new Date().toISOString(),
-      isSystem: false,
+    const text = body.trim();
+    if (!text) {
+      return;
+    }
+    await sendChatMessage(chatRoomId, text);
+    const room = await getChatRoom(chatRoomId);
+    const roomParticipants = room.participants
+      .filter((participant) => participant !== user?.id)
+      .map((id) => participantProfile(id, user));
+    const mappedRoom: ChatRoom = {
+      id: room.id,
+      matchId: room.match_id,
+      participants: roomParticipants,
+      messages: room.messages.map((message) => ({
+        id: message.id,
+        senderId: message.sender_auth0_id ?? 'system',
+        senderName: message.sender_name,
+        body: message.body,
+        timestamp: message.created_at,
+        isSystem: message.is_system,
+      })),
+      type: room.type,
+      lastMessage: room.last_message ?? undefined,
+      lastMessageTime: room.last_message_time ?? undefined,
+      createdAt: room.created_at,
     };
-
-    const updatedChats = chatRooms.map(room => {
-      if (room.id === chatRoomId) {
-        return {
-          ...room,
-          messages: [...room.messages, newMessage],
-          lastMessage: body,
-          lastMessageTime: new Date().toISOString(),
-        };
-      }
-      return room;
+    setChatRooms((prev) => {
+      const withoutCurrent = prev.filter((item) => item.id !== chatRoomId);
+      return [mappedRoom, ...withoutCurrent];
     });
-
-    setChatRooms(updatedChats);
-    await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
-
-    setTimeout(async () => {
-      const room = updatedChats.find(r => r.id === chatRoomId);
-      if (!room || room.participants.length === 0) return;
-      const responder = room.participants[Math.floor(Math.random() * room.participants.length)];
-
-      const responses = [
-        "Sounds great! Looking forward to our commute together.",
-        "That's awesome! I walk that route almost every day.",
-        "Nice to meet you! What time works best for you?",
-        "Same here! I love that area. See you tomorrow?",
-        "Perfect, let's plan for the morning commute!",
-        "Great to connect! I usually head out around 8am.",
-      ];
-
-      const replyMessage: ChatMessage = {
-        id: Crypto.randomUUID(),
-        senderId: responder.id,
-        senderName: responder.name,
-        body: responses[Math.floor(Math.random() * responses.length)],
-        timestamp: new Date().toISOString(),
-        isSystem: false,
-      };
-
-      setChatRooms(prev => {
-        const updated = prev.map(r => {
-          if (r.id === chatRoomId) {
-            return {
-              ...r,
-              messages: [...r.messages, replyMessage],
-              lastMessage: replyMessage.body,
-              lastMessageTime: replyMessage.timestamp,
-            };
-          }
-          return r;
-        });
-        AsyncStorage.setItem('flock_chats', JSON.stringify(updated));
-        return updated;
-      });
-    }, 1500 + Math.random() * 2000);
-  }, [chatRooms, user]);
+  }, [user]);
 
   const submitReview = useCallback(async (matchId: string, enjoyed: boolean) => {
-    const match = matches.find(m => m.id === matchId);
-    if (!match) return;
-
+    const match = matches.find((item) => item.id === matchId);
+    if (!match) {
+      return;
+    }
     if (enjoyed) {
-      const newFriends = [...commuteFriends, ...match.participants.filter(
-        p => !commuteFriends.some(f => f.id === p.id)
-      )];
+      const newFriends = [...commuteFriends, ...match.participants.filter((participant) => !commuteFriends.some((friend) => friend.id === participant.id))];
       setCommuteFriends(newFriends);
       await AsyncStorage.setItem('flock_friends', JSON.stringify(newFriends));
-
-      const updatedMatches = matches.map(m =>
-        m.id === matchId ? { ...m, status: 'completed' as const } : m
-      );
-      setMatches(updatedMatches);
-      await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
-    } else {
-      const updatedMatches = matches.map(m =>
-        m.id === matchId ? { ...m, status: 'declined' as const } : m
-      );
-      setMatches(updatedMatches);
-      await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
     }
-
     setPendingReview(null);
-  }, [matches, commuteFriends]);
+  }, [commuteFriends, matches]);
 
   const addCommuteFriend = useCallback(async (profile: MatchProfile) => {
-    if (commuteFriends.some(f => f.id === profile.id)) return;
+    if (commuteFriends.some((friend) => friend.id === profile.id)) {
+      return;
+    }
     const newFriends = [...commuteFriends, profile];
     setCommuteFriends(newFriends);
     await AsyncStorage.setItem('flock_friends', JSON.stringify(newFriends));
   }, [commuteFriends]);
 
   const removeCommuteFriend = useCallback(async (profileId: string) => {
-    const newFriends = commuteFriends.filter(f => f.id !== profileId);
+    const newFriends = commuteFriends.filter((friend) => friend.id !== profileId);
     setCommuteFriends(newFriends);
     await AsyncStorage.setItem('flock_friends', JSON.stringify(newFriends));
   }, [commuteFriends]);
 
   const getOrCreateChatRoomForFriend = useCallback((friend: MatchProfile): string => {
-    const existing = chatRooms.find(r =>
-      r.type === 'dm' && r.participants.length === 1 && r.participants[0].id === friend.id
-    );
-    if (existing) return existing.id;
-    const icebreaker = user
-      ? generateIcebreaker([user.interests, friend.interests])
-      : "You're connected! Say hi and plan your next commute together.";
-    const systemMessage = {
-      id: Crypto.randomUUID(),
-      senderId: 'system',
-      senderName: 'Flock',
-      body: icebreaker,
-      timestamp: new Date().toISOString(),
-      isSystem: true,
-    };
+    const existing = chatRooms.find((room) => room.type === 'dm' && room.participants.some((participant) => participant.id === friend.id));
+    if (existing) {
+      return existing.id;
+    }
     const newRoom: ChatRoom = {
       id: Crypto.randomUUID(),
       matchId: Crypto.randomUUID(),
       participants: [friend],
-      messages: [systemMessage],
+      messages: [],
       type: 'dm',
-      lastMessage: icebreaker,
-      lastMessageTime: systemMessage.timestamp,
       createdAt: new Date().toISOString(),
     };
-    const updated = [...chatRooms, newRoom];
-    setChatRooms(updated);
-    AsyncStorage.setItem('flock_chats', JSON.stringify(updated));
+    setChatRooms((prev) => [newRoom, ...prev]);
     return newRoom.id;
-  }, [chatRooms, user]);
+  }, [chatRooms]);
 
   const completeOnboarding = useCallback(async () => {
     setIsOnboarded(true);
-    await AsyncStorage.setItem('flock_onboarded', 'true');
   }, []);
 
   const clearPendingReview = useCallback(() => {
@@ -544,10 +533,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCommuteFriends([]);
     setIsOnboarded(false);
     setPendingReview(null);
-    await AsyncStorage.multiRemove([
-      'flock_user', 'flock_commute', 'flock_matches',
-      'flock_chats', 'flock_friends', 'flock_onboarded',
-    ]);
+    await AsyncStorage.removeItem('flock_friends');
   }, []);
 
   const value = useMemo(() => ({
@@ -573,15 +559,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearPendingReview,
     triggerMatching,
     logout,
-  }), [user, commute, matches, chatRooms, commuteFriends, pendingReview, isLoading, isOnboarded,
-    setUser, setCommute, acceptMatch, declineMatch, sendMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, getOrCreateChatRoomForFriend, completeOnboarding,
-    clearPendingReview, triggerMatching, logout]);
+  }), [
+    user,
+    commute,
+    matches,
+    chatRooms,
+    commuteFriends,
+    pendingReview,
+    isLoading,
+    isOnboarded,
+    setUser,
+    setCommute,
+    acceptMatch,
+    declineMatch,
+    sendMessage,
+    deleteChatRoom,
+    submitReview,
+    addCommuteFriend,
+    removeCommuteFriend,
+    getOrCreateChatRoomForFriend,
+    completeOnboarding,
+    clearPendingReview,
+    triggerMatching,
+    logout,
+  ]);
 
-  return (
-    <AppContext.Provider value={value}>
-      {children}
-    </AppContext.Provider>
-  );
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
 export function useApp() {

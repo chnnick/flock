@@ -51,7 +51,9 @@ export default function MatchesScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await acceptMatch(bestMatch.id);
     setIsQueuing(false);
-    router.push({ pathname: '/chat/[id]', params: { id: bestMatch.chatRoomId } });
+    if (bestMatch.chatRoomId) {
+      router.push({ pathname: '/chat/[id]', params: { id: bestMatch.chatRoomId } });
+    }
   };
 
   return (
@@ -377,7 +379,10 @@ function ActiveMatchCard({ match, index, isGroup }: { match: Match; index: numbe
     <Animated.View entering={FadeInRight.delay(index * 100).duration(500)}>
       <Pressable
         style={({ pressed }) => [styles.activeCard, pressed && { opacity: 0.9 }]}
-        onPress={() => router.push({ pathname: '/chat/[id]', params: { id: match.chatRoomId } })}
+        onPress={() => {
+          if (!match.chatRoomId) return;
+          router.push({ pathname: '/chat/[id]', params: { id: match.chatRoomId } });
+        }}
       >
         {isGroup ? (
           <>

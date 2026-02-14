@@ -2,6 +2,7 @@ import pymongo
 from pymongo import AsyncMongoClient  
 from beanie import init_beanie  
 from src.config import settings
+from src.db.models.chat_message import ChatMessage
 from src.db.models.chat_room import ChatRoom
 from src.db.models.commute import Commute
 from src.db.models.match_suggestion import MatchSuggestion
@@ -16,5 +17,5 @@ async def init_db():
 
     await init_beanie(
         database=db,
-        document_models=[User, Commute, MatchSuggestion, ChatRoom],
+        document_models=[User, Commute, MatchSuggestion, ChatRoom, ChatMessage],
     )

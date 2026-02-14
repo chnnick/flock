@@ -86,16 +86,28 @@ export default function MatchesScreen() {
                 <Text style={styles.sectionTitle}>
                   New Matches ({pendingMatches.length})
                 </Text>
-                {pendingMatches.map((match, index) => (
-                  <MatchCard
-                    key={match.id}
-                    match={match}
-                    index={index}
-                    onAccept={() => handleAccept(match.id)}
-                    onDecline={() => handleDecline(match.id)}
-                    isLoading={loadingMatch === match.id}
-                  />
-                ))}
+                {pendingMatches.map((match, index) => {
+                  const isGroup = match.participants.length > 1 || (match.maxCapacity != null && match.maxCapacity > 1);
+                  return isGroup ? (
+                    <GroupMatchCard
+                      key={match.id}
+                      match={match}
+                      index={index}
+                      onAccept={() => handleAccept(match.id)}
+                      onDecline={() => handleDecline(match.id)}
+                      isLoading={loadingMatch === match.id}
+                    />
+                  ) : (
+                    <MatchCard
+                      key={match.id}
+                      match={match}
+                      index={index}
+                      onAccept={() => handleAccept(match.id)}
+                      onDecline={() => handleDecline(match.id)}
+                      isLoading={loadingMatch === match.id}
+                    />
+                  );
+                })}
               </View>
             )}
 
@@ -104,9 +116,10 @@ export default function MatchesScreen() {
                 <Text style={styles.sectionTitle}>
                   Active ({activeMatches.length})
                 </Text>
-                {activeMatches.map((match, index) => (
-                  <ActiveMatchCard key={match.id} match={match} index={index} />
-                ))}
+                {activeMatches.map((match, index) => {
+                  const isGroup = match.participants.length > 1 || (match.maxCapacity != null && match.maxCapacity > 1);
+                  return <ActiveMatchCard key={match.id} match={match} index={index} isGroup={isGroup} />;
+                })}
               </View>
             )}
           </>
@@ -123,7 +136,6 @@ function MatchCard({ match, index, onAccept, onDecline, isLoading }: {
 }) {
   const person = match.participants[0];
   const overlapPct = Math.round(match.overlapScore * 100);
-  const commonInterests = match.interestScore > 0;
 
   return (
     <Animated.View entering={FadeInDown.delay(index * 100).duration(500)}>
@@ -199,8 +211,117 @@ function MatchCard({ match, index, onAccept, onDecline, isLoading }: {
   );
 }
 
-function ActiveMatchCard({ match, index }: { match: Match; index: number }) {
+function GroupMatchCard({ match, index, onAccept, onDecline, isLoading }: {
+  match: Match; index: number; onAccept: () => void; onDecline: () => void; isLoading: boolean;
+}) {
+  const groupType = match.transportMode === 'walk' ? 'Walking Group' : 'Transit Group';
+  const capacity = match.maxCapacity ?? 4;
+  const currentCount = match.participants.length;
+  const capacityLabel = `${currentCount}/${capacity}`;
+  const participantNames = match.participants.length <= 3
+    ? match.participants.map(p => p.name.split(' ')[0]).join(', ')
+    : `${match.participants.slice(0, 2).map(p => p.name.split(' ')[0]).join(', ')}, +${match.participants.length - 2}`;
+  const allInterests = [...new Set(match.participants.flatMap(p => p.interests))];
+
+  return (
+    <Animated.View entering={FadeInDown.delay(index * 100).duration(500)}>
+      <View style={styles.matchCard}>
+        <View style={styles.groupCardHeader}>
+          <View style={[styles.groupTypeBadge, { backgroundColor: match.transportMode === 'walk' ? Colors.walk + '20' : Colors.transit + '20' }]}>
+            <Ionicons
+              name={match.transportMode === 'walk' ? 'walk' : 'train'}
+              size={14}
+              color={match.transportMode === 'walk' ? Colors.walk : Colors.transit}
+            />
+            <Text style={[styles.groupTypeText, { color: match.transportMode === 'walk' ? Colors.walk : Colors.transit }]}>
+              {groupType}
+            </Text>
+          </View>
+          <View style={styles.capacityBadge}>
+            <Text style={styles.capacityText}>{capacityLabel}</Text>
+          </View>
+        </View>
+
+        <View style={styles.groupParticipantsRow}>
+          <View style={styles.groupAvatars}>
+            {match.participants.map((p, i) => (
+              <View
+                key={p.id}
+                style={[
+                  styles.groupAvatar,
+                  { backgroundColor: p.avatar, marginLeft: i > 0 ? -10 : 0, zIndex: match.participants.length - i },
+                ]}
+              >
+                <Text style={styles.groupAvatarText}>{p.name[0]}</Text>
+              </View>
+            ))}
+          </View>
+          <Text style={styles.groupParticipantNames} numberOfLines={1}>{participantNames}</Text>
+        </View>
+
+        <View style={styles.matchDetails}>
+          <View style={styles.detailRow}>
+            <Ionicons
+              name={match.transportMode === 'walk' ? 'walk' : 'train'}
+              size={16}
+              color={match.transportMode === 'walk' ? Colors.walk : Colors.transit}
+            />
+            <Text style={styles.detailText}>
+              {match.sharedSegmentStart.name} to {match.sharedSegmentEnd.name}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons name="time-outline" size={16} color={Colors.textSecondary} />
+            <Text style={styles.detailText}>{match.estimatedTime} shared commute</Text>
+          </View>
+        </View>
+
+        {allInterests.length > 0 && (
+          <View style={styles.interestTags}>
+            {allInterests.slice(0, 4).map(interest => (
+              <View key={interest} style={styles.interestChip}>
+                <Text style={styles.interestChipText}>{interest}</Text>
+              </View>
+            ))}
+            {allInterests.length > 4 && (
+              <Text style={styles.moreInterests}>+{allInterests.length - 4}</Text>
+            )}
+          </View>
+        )}
+
+        <View style={styles.actionRow}>
+          <Pressable
+            style={({ pressed }) => [styles.declineButton, pressed && { opacity: 0.8 }]}
+            onPress={onDecline}
+          >
+            <Ionicons name="close" size={22} color={Colors.error} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.acceptButton, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+            onPress={onAccept}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color={Colors.textInverse} size="small" />
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={20} color={Colors.textInverse} />
+                <Text style={styles.acceptButtonText}>Accept Match</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+function ActiveMatchCard({ match, index, isGroup }: { match: Match; index: number; isGroup: boolean }) {
   const person = match.participants[0];
+  const groupType = match.transportMode === 'walk' ? 'Walking Group' : 'Transit Group';
+  const capacity = match.maxCapacity ?? 4;
+  const currentCount = match.participants.length;
+  const capacityLabel = `${currentCount}/${capacity}`;
 
   return (
     <Animated.View entering={FadeInRight.delay(index * 100).duration(500)}>
@@ -208,19 +329,49 @@ function ActiveMatchCard({ match, index }: { match: Match; index: number }) {
         style={({ pressed }) => [styles.activeCard, pressed && { opacity: 0.9 }]}
         onPress={() => router.push({ pathname: '/chat/[id]', params: { id: match.chatRoomId } })}
       >
-        <View style={[styles.avatar, { backgroundColor: person.avatar, width: 44, height: 44 }]}>
-          <Text style={[styles.avatarText, { fontSize: 18 }]}>{person.name[0]}</Text>
-        </View>
-        <View style={styles.activeInfo}>
-          <Text style={styles.activeName}>{person.name}</Text>
-          <Text style={styles.activeRoute}>
-            {match.sharedSegmentStart.name} to {match.sharedSegmentEnd.name}
-          </Text>
-        </View>
-        <View style={styles.activeRight}>
-          <Text style={styles.activeTime}>{match.estimatedTime}</Text>
-          <Ionicons name="chatbubble-ellipses" size={18} color={Colors.primary} />
-        </View>
+        {isGroup ? (
+          <>
+            <View style={styles.activeGroupAvatars}>
+              {match.participants.slice(0, 4).map((p, i) => (
+                <View
+                  key={p.id}
+                  style={[
+                    styles.activeGroupAvatar,
+                    { backgroundColor: p.avatar, marginLeft: i > 0 ? -8 : 0, zIndex: 4 - i },
+                  ]}
+                >
+                  <Text style={styles.activeGroupAvatarText}>{p.name[0]}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.activeInfo}>
+              <Text style={styles.activeName}>{groupType}</Text>
+              <Text style={styles.activeRoute}>
+                {match.sharedSegmentStart.name} to {match.sharedSegmentEnd.name}
+              </Text>
+            </View>
+            <View style={styles.activeRight}>
+              <Text style={styles.activeCapacity}>{capacityLabel}</Text>
+              <Ionicons name="chatbubble-ellipses" size={18} color={Colors.primary} />
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={[styles.avatar, { backgroundColor: person.avatar, width: 44, height: 44 }]}>
+              <Text style={[styles.avatarText, { fontSize: 18 }]}>{person.name[0]}</Text>
+            </View>
+            <View style={styles.activeInfo}>
+              <Text style={styles.activeName}>{person.name}</Text>
+              <Text style={styles.activeRoute}>
+                {match.sharedSegmentStart.name} to {match.sharedSegmentEnd.name}
+              </Text>
+            </View>
+            <View style={styles.activeRight}>
+              <Text style={styles.activeTime}>{match.estimatedTime}</Text>
+              <Ionicons name="chatbubble-ellipses" size={18} color={Colors.primary} />
+            </View>
+          </>
+        )}
       </Pressable>
     </Animated.View>
   );
@@ -271,6 +422,65 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     marginBottom: 14,
+  },
+  groupCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  groupTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  groupTypeText: {
+    fontSize: 13,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  capacityBadge: {
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  capacityText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textSecondary,
+  },
+  groupParticipantsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  groupAvatars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  groupAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.card,
+  },
+  groupAvatarText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_700Bold',
+    color: Colors.textInverse,
+  },
+  groupParticipantNames: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.text,
   },
   avatar: {
     width: 52,
@@ -416,6 +626,29 @@ const styles = StyleSheet.create({
   activeTime: {
     fontSize: 12,
     fontFamily: 'Outfit_500Medium',
+    color: Colors.textSecondary,
+  },
+  activeGroupAvatars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activeGroupAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.card,
+  },
+  activeGroupAvatarText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_700Bold',
+    color: Colors.textInverse,
+  },
+  activeCapacity: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
     color: Colors.textSecondary,
   },
   emptyState: {

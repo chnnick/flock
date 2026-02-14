@@ -48,6 +48,7 @@ export interface Match {
   status: 'pending' | 'active' | 'completed' | 'declined';
   chatRoomId: string;
   createdAt: string;
+  maxCapacity?: number;  // e.g. 4 for groups; undefined = individual
 }
 
 export interface ChatMessage {
@@ -139,14 +140,11 @@ function pickRandom<T>(arr: T[], count: number): T[] {
 function generateMatchProfiles(count: number, userGender?: string): MatchProfile[] {
   const genders = ['male', 'female', 'non-binary'] as const;
   const avatarColors = ['#FF6B35', '#004E64', '#25A18E', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981'];
-  const usedNames = new Set<string>();
+  const shuffledNames = [...SAMPLE_NAMES].sort(() => Math.random() - 0.5);
 
-  return Array.from({ length: count }, () => {
-    let name: string;
-    do {
-      name = SAMPLE_NAMES[Math.floor(Math.random() * SAMPLE_NAMES.length)];
-    } while (usedNames.has(name));
-    usedNames.add(name);
+  return Array.from({ length: count }, (_, i) => {
+    const baseName = shuffledNames[i % SAMPLE_NAMES.length];
+    const name = i >= SAMPLE_NAMES.length ? `${baseName.split(' ')[0]} ${Math.floor(i / SAMPLE_NAMES.length) + 1}` : baseName;
 
     return {
       id: Crypto.randomUUID(),
@@ -182,14 +180,63 @@ function generateIcebreaker(interests: string[][]): string {
 }
 
 function generateMatches(userCommute: Commute, userProfile: UserProfile): Match[] {
-  const count = 3 + Math.floor(Math.random() * 4);
-  const profiles = generateMatchProfiles(count, userProfile.gender);
+  const walkTimes = ['12 min', '15 min', '18 min', '22 min', '8 min', '25 min'];
+  const transitTimes = ['8 min', '12 min', '15 min', '20 min', '6 min'];
+  const times = userCommute.transportMode === 'walk' ? walkTimes : transitTimes;
 
-  return profiles.map(profile => {
+  if (userCommute.matchPreference === 'individual') {
+    const count = 3 + Math.floor(Math.random() * 4);
+    const profiles = generateMatchProfiles(count, userProfile.gender);
+
+    return profiles.map(profile => {
+      const overlapScore = 0.4 + Math.random() * 0.55;
+      const commonInterests = profile.interests.filter(i => userProfile.interests.includes(i));
+      const union = new Set([...profile.interests, ...userProfile.interests]);
+      const interestScore = commonInterests.length / union.size;
+      const compositeScore = 0.8 * overlapScore + 0.2 * interestScore;
+
+      const startIdx = Math.floor(Math.random() * SAMPLE_LOCATIONS.length);
+      let endIdx = startIdx;
+      while (endIdx === startIdx) {
+        endIdx = Math.floor(Math.random() * SAMPLE_LOCATIONS.length);
+      }
+
+      const chatRoomId = Crypto.randomUUID();
+      const matchId = Crypto.randomUUID();
+
+      return {
+        id: matchId,
+        participants: [profile],
+        overlapScore,
+        interestScore,
+        compositeScore,
+        sharedSegmentStart: SAMPLE_LOCATIONS[startIdx],
+        sharedSegmentEnd: SAMPLE_LOCATIONS[endIdx],
+        transportMode: userCommute.transportMode,
+        estimatedTime: times[Math.floor(Math.random() * times.length)],
+        status: 'pending' as const,
+        chatRoomId,
+        createdAt: new Date().toISOString(),
+      };
+    }).sort((a, b) => b.compositeScore - a.compositeScore);
+  }
+
+  // Group matches
+  const groupCount = 3 + Math.floor(Math.random() * 3);  // 3–5 groups
+  const allProfiles = generateMatchProfiles(groupCount * 4, userProfile.gender);  // enough for all groups
+  const matches: Match[] = [];
+  let profileIdx = 0;
+
+  for (let g = 0; g < groupCount; g++) {
+    const groupSize = 2 + Math.floor(Math.random() * 2);  // 2–3 participants (room for user to join; max 4)
+    const groupProfiles = allProfiles.slice(profileIdx, profileIdx + groupSize);
+    profileIdx += groupSize;
+
     const overlapScore = 0.4 + Math.random() * 0.55;
-    const commonInterests = profile.interests.filter(i => userProfile.interests.includes(i));
-    const union = new Set([...profile.interests, ...userProfile.interests]);
-    const interestScore = commonInterests.length / union.size;
+    const allInterests = groupProfiles.flatMap(p => p.interests);
+    const commonWithUser = allInterests.filter(i => userProfile.interests.includes(i));
+    const union = new Set([...allInterests, ...userProfile.interests]);
+    const interestScore = union.size > 0 ? commonWithUser.length / union.size : 0;
     const compositeScore = 0.8 * overlapScore + 0.2 * interestScore;
 
     const startIdx = Math.floor(Math.random() * SAMPLE_LOCATIONS.length);
@@ -201,13 +248,9 @@ function generateMatches(userCommute: Commute, userProfile: UserProfile): Match[
     const chatRoomId = Crypto.randomUUID();
     const matchId = Crypto.randomUUID();
 
-    const walkTimes = ['12 min', '15 min', '18 min', '22 min', '8 min', '25 min'];
-    const transitTimes = ['8 min', '12 min', '15 min', '20 min', '6 min'];
-    const times = userCommute.transportMode === 'walk' ? walkTimes : transitTimes;
-
-    return {
+    matches.push({
       id: matchId,
-      participants: [profile],
+      participants: groupProfiles,
       overlapScore,
       interestScore,
       compositeScore,
@@ -218,8 +261,11 @@ function generateMatches(userCommute: Commute, userProfile: UserProfile): Match[
       status: 'pending' as const,
       chatRoomId,
       createdAt: new Date().toISOString(),
-    };
-  }).sort((a, b) => b.compositeScore - a.compositeScore);
+      maxCapacity: 4,
+    });
+  }
+
+  return matches.sort((a, b) => b.compositeScore - a.compositeScore);
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {

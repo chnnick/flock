@@ -70,16 +70,27 @@ export default function ChatDetailScreen() {
         </Pressable>
         <View style={styles.headerInfo}>
           <View style={styles.headerAvatars}>
-            {room.participants.slice(0, 2).map(p => (
-              <View key={p.id} style={[styles.headerAvatar, { backgroundColor: p.avatar }]}>
+            {room.participants.slice(0, room.type === 'group' ? 4 : 2).map((p, i) => (
+              <View
+                key={p.id}
+                style={[
+                  styles.headerAvatar,
+                  { backgroundColor: p.avatar, marginLeft: i > 0 ? -8 : 0, zIndex: room.participants.length - i },
+                ]}
+              >
                 <Text style={styles.headerAvatarText}>{p.name[0]}</Text>
               </View>
             ))}
+            {room.type === 'group' && room.participants.length > 4 && (
+              <View style={[styles.headerAvatar, styles.headerAvatarMore, { marginLeft: -8 }]}>
+                <Text style={styles.headerAvatarMoreText}>+{room.participants.length - 4}</Text>
+              </View>
+            )}
           </View>
           <View>
             <Text style={styles.headerName} numberOfLines={1}>{participantNames}</Text>
             <Text style={styles.headerSub}>
-              {match?.transportMode === 'walk' ? 'Walking' : 'Transit'} buddy
+              {match?.transportMode === 'walk' ? 'Walking' : 'Transit'}{room.type === 'group' ? ' group' : ' buddy'}
             </Text>
           </View>
         </View>
@@ -223,6 +234,14 @@ const styles = StyleSheet.create({
     marginRight: -6,
     borderWidth: 2,
     borderColor: Colors.card,
+  },
+  headerAvatarMore: {
+    backgroundColor: Colors.surface,
+  },
+  headerAvatarMoreText: {
+    fontSize: 12,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.text,
   },
   headerAvatarText: {
     fontSize: 14,

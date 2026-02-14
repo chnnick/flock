@@ -45,9 +45,5 @@ def health():
     return {"status": "ok"}
 
 
-# TODO: Add endpoints (all under /api):
-# Currently:
-#   GET  /api/health      — health check (no auth)
-#   GET  /api/users/me    — current user (Auth0 required)
-#   POST /api/users/me    — create/update profile (Auth0, body: name, occupation, gender, interests)
-#   PATCH /api/users/me   — partial update (Auth0)
+# Endpoints: GET/POST/PATCH /api/users/me require Authorization: Bearer <Auth0 access token>.
+# 400 on POST /api/users/me usually means missing or invalid token — add the header and retry.

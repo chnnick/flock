@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback } from 'react';
+import {createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback, useRef} from 'react';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 
@@ -227,6 +229,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [commute, setCommuteState] = useState<Commute | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const wsConnections = useRef<{ [key: string]: WebSocket }>({});
   const [commuteFriends, setCommuteFriends] = useState<MatchProfile[]>([]);
   const [pendingReview, setPendingReview] = useState<Match | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -324,72 +327,278 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
   }, [matches]);
 
+  useEffect(() => {
+    if (!user || chatRooms.length === 0) return;
+
+    chatRooms.forEach(room => {
+      if (!wsConnections.current[room.id]) {
+        // IMPROVED HOST DETECTION
+        // 1. Check for manual override (useful for debugging)
+        // 2. Try Expo hostUri (reliable for local dev with Expo Go)
+        // 3. Fallback to 10.0.2.2 for Android emulator
+        // 4. Ultimate fallback to localhost
+        
+        let host = 'localhost';
+        
+        if (Constants.expoConfig?.hostUri) {
+          host = Constants.expoConfig.hostUri.split(':')[0];
+          console.log(`Detected Expo host: ${host}`);
+        } else if (Platform.OS === 'android') {
+          host = '10.0.2.2';
+          console.log(`Detected Android emulator, using: ${host}`);
+        } else {
+          console.log(`No hostUri detected, falling back to: ${host}`);
+        }
+        
+        // Ensure host is not empty or "localhost" if we are on a real device/emulator
+        // that might need a specific IP. But hostUri usually handles this.
+        
+        const wsUrl = `ws://${host}:8000/api/chat/ws/chat/${room.id}`;
+        console.log(`[WS] Attempting to connect to room ${room.id} at ${wsUrl}`);
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          console.log(`[WS] Connected to room ${room.id}`);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log(`[WS] Received message for room ${room.id}:`, data.type);
+            if (data.type === 'message') {
+              const incomingMsg: ChatMessage = {
+                id: data.message.id,
+                senderId: data.message.sender_id,
+                senderName: data.message.sender_name,
+                body: data.message.body,
+                timestamp: data.message.timestamp,
+                isSystem: data.message.is_system,
+              };
+
+              setChatRooms(prev => prev.map(r => {
+                if (r.id === room.id) {
+                  // If we already have this message (e.g. from optimistic update or previous history sync)
+                  // but it has a temp ID or different ID, we should ideally deduplicate.
+                  // For now, check by content and timestamp if it's from the same sender
+                  const isDuplicate = r.messages.some(m => 
+                    m.id === incomingMsg.id || 
+                    (m.senderId === incomingMsg.senderId && m.body === incomingMsg.body && Math.abs(new Date(m.timestamp).getTime() - new Date(incomingMsg.timestamp).getTime()) < 2000)
+                  );
+                  
+                  if (isDuplicate) {
+                    // Update the optimistic message with the real ID from server if needed
+                    return {
+                      ...r,
+                      messages: r.messages.map(m => 
+                        (m.senderId === incomingMsg.senderId && m.body === incomingMsg.body && m.id.length > 30) // likely a randomUUID
+                        ? { ...m, id: incomingMsg.id, timestamp: incomingMsg.timestamp } 
+                        : m
+                      )
+                    };
+                  }
+
+                  return {
+                    ...r,
+                    messages: [...r.messages, incomingMsg],
+                    lastMessage: incomingMsg.body,
+                    lastMessageTime: incomingMsg.timestamp,
+                  };
+                }
+                return r;
+              }));
+            } else if (data.type === 'history') {
+              const historyMsgs: ChatMessage[] = data.messages.map((m: any) => ({
+                id: m.id,
+                senderId: m.sender_id,
+                senderName: m.sender_name,
+                body: m.body,
+                timestamp: m.timestamp,
+                isSystem: m.is_system,
+              }));
+
+              setChatRooms(prev => prev.map(r => {
+                if (r.id === room.id) {
+                  return {
+                    ...r,
+                    messages: historyMsgs,
+                    lastMessage: historyMsgs[historyMsgs.length - 1]?.body || r.lastMessage,
+                    lastMessageTime: historyMsgs[historyMsgs.length - 1]?.timestamp || r.lastMessageTime,
+                  };
+                }
+                return r;
+              }));
+            }
+          } catch (e) {
+            console.error(`Error parsing WebSocket message for room ${room.id}:`, e);
+          }
+        };
+
+        ws.onerror = (e) => {
+          console.error(`WebSocket error for room ${room.id}:`, e);
+        };
+
+        ws.onclose = (e) => {
+          console.log(`WebSocket closed for room ${room.id}:`, e.code, e.reason);
+          delete wsConnections.current[room.id];
+        };
+
+        wsConnections.current[room.id] = ws;
+      }
+    });
+  }, [user, chatRooms]);
+
   const sendMessage = useCallback(async (chatRoomId: string, body: string) => {
     if (!user) return;
-    const newMessage: ChatMessage = {
-      id: Crypto.randomUUID(),
+
+    // Optimistic Update
+    const tempId = Crypto.randomUUID();
+    const optimisticMsg: ChatMessage = {
+      id: tempId,
       senderId: user.id,
       senderName: user.name,
-      body,
+      body: body,
       timestamp: new Date().toISOString(),
       isSystem: false,
     };
 
-    const updatedChats = chatRooms.map(room => {
-      if (room.id === chatRoomId) {
+    setChatRooms(prev => prev.map(r => {
+      if (r.id === chatRoomId) {
         return {
-          ...room,
-          messages: [...room.messages, newMessage],
+          ...r,
+          messages: [...r.messages, optimisticMsg],
           lastMessage: body,
-          lastMessageTime: new Date().toISOString(),
+          lastMessageTime: optimisticMsg.timestamp,
         };
       }
-      return room;
-    });
-
-    setChatRooms(updatedChats);
-    await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
-
+      return r;
+    }));
+    
+    // Also update matches to keep lastMessage in sync for the list view
+    setMatches(prev => prev.map(m => {
+      if (m.chatRoomId === chatRoomId) {
+        // Find the chat room to get its participants if needed, but here we just want to update metadata
+        return { ...m };
+      }
+      return m;
+    }));
+    
+    // AsyncStorage update for chatRooms
     setTimeout(async () => {
-      const room = updatedChats.find(r => r.id === chatRoomId);
-      if (!room || room.participants.length === 0) return;
-      const responder = room.participants[Math.floor(Math.random() * room.participants.length)];
+      try {
+        const currentChats = await AsyncStorage.getItem('flock_chats');
+        if (currentChats) {
+          const parsed = JSON.parse(currentChats);
+          const updated = parsed.map((r: any) => {
+            if (r.id === chatRoomId) {
+              return {
+                ...r,
+                messages: [...r.messages, optimisticMsg],
+                lastMessage: body,
+                lastMessageTime: optimisticMsg.timestamp,
+              };
+            }
+            return r;
+          });
+          await AsyncStorage.setItem('flock_chats', JSON.stringify(updated));
+        }
+      } catch (e) {
+        console.error('Failed to update AsyncStorage in sendMessage:', e);
+      }
+    }, 0);
 
-      const responses = [
-        "Sounds great! Looking forward to our commute together.",
-        "That's awesome! I walk that route almost every day.",
-        "Nice to meet you! What time works best for you?",
-        "Same here! I love that area. See you tomorrow?",
-        "Perfect, let's plan for the morning commute!",
-        "Great to connect! I usually head out around 8am.",
-      ];
-
-      const replyMessage: ChatMessage = {
-        id: Crypto.randomUUID(),
-        senderId: responder.id,
-        senderName: responder.name,
-        body: responses[Math.floor(Math.random() * responses.length)],
-        timestamp: new Date().toISOString(),
-        isSystem: false,
+    let ws = wsConnections.current[chatRoomId];
+    
+    // If not connected, try to reconnect once
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.log(`[WS] WebSocket not open for room ${chatRoomId}. Attempting to reconnect...`);
+      let host = 'localhost';
+      if (Constants.expoConfig?.hostUri) {
+        host = Constants.expoConfig.hostUri.split(':')[0];
+      } else if (Platform.OS === 'android') {
+        host = '10.0.2.2';
+      }
+      const wsUrl = `ws://${host}:8000/api/chat/ws/chat/${chatRoomId}`;
+      console.log(`[WS] Reconnecting at ${wsUrl}`);
+      ws = new WebSocket(wsUrl);
+      
+      // We'll have to wait for it to open to send the message, 
+      // or just fail this time and let the next one succeed.
+      // For a better UX, we can queue the message or wait a bit.
+      // But for now, let's at least trigger the reconnection.
+      wsConnections.current[chatRoomId] = ws;
+      
+      // Re-setup listeners (simplified)
+      ws.onopen = () => {
+        console.log(`Re-connected to room ${chatRoomId}`);
+        ws.send(JSON.stringify({
+          sender_id: user.id,
+          sender_name: user.name,
+          body: body
+        }));
       };
-
-      setChatRooms(prev => {
-        const updated = prev.map(r => {
-          if (r.id === chatRoomId) {
-            return {
-              ...r,
-              messages: [...r.messages, replyMessage],
-              lastMessage: replyMessage.body,
-              lastMessageTime: replyMessage.timestamp,
-            };
+        // Note: Full listener setup is handled by the useEffect on chatRooms change,
+        // but since we are replacing the ref here, we need to ensure the new socket
+        // also has the message handler to update the UI when the response comes back.
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'message') {
+              const incomingMsg: ChatMessage = {
+                id: data.message.id,
+                senderId: data.message.sender_id,
+                senderName: data.message.sender_name,
+                body: data.message.body,
+                timestamp: data.message.timestamp,
+                isSystem: data.message.is_system,
+              };
+              setChatRooms(prev => prev.map(r => {
+                if (r.id === chatRoomId) {
+                  const isDuplicate = r.messages.some(m => 
+                    m.id === incomingMsg.id || 
+                    (m.senderId === incomingMsg.senderId && m.body === incomingMsg.body && Math.abs(new Date(m.timestamp).getTime() - new Date(incomingMsg.timestamp).getTime()) < 2000)
+                  );
+                  if (isDuplicate) {
+                    return {
+                      ...r,
+                      messages: r.messages.map(m => 
+                        (m.senderId === incomingMsg.senderId && m.body === incomingMsg.body && m.id.length > 30)
+                        ? { ...m, id: incomingMsg.id, timestamp: incomingMsg.timestamp } 
+                        : m
+                      )
+                    };
+                  }
+                  return {
+                    ...r,
+                    messages: [...r.messages, incomingMsg],
+                    lastMessage: incomingMsg.body,
+                    lastMessageTime: incomingMsg.timestamp,
+                  };
+                }
+                return r;
+              }));
+            }
+          } catch (e) {
+            console.error(`Error parsing WebSocket message for room ${chatRoomId}:`, e);
           }
-          return r;
-        });
-        AsyncStorage.setItem('flock_chats', JSON.stringify(updated));
-        return updated;
-      });
-    }, 1500 + Math.random() * 2000);
-  }, [chatRooms, user]);
+        };
+        ws.onerror = (e) => console.error(`Re-connect WebSocket error for room ${chatRoomId}:`, e);
+        ws.onclose = () => delete wsConnections.current[chatRoomId];
+      // but manually re-triggering here for immediate send.
+      return;
+    }
+
+    try {
+      ws.send(JSON.stringify({
+        sender_id: user.id,
+        sender_name: user.name,
+        body: body
+      }));
+    } catch (e) {
+      console.error(`Error sending message over WebSocket for room ${chatRoomId}:`, e);
+      // We already did an optimistic update, so the user sees it.
+      // In a real app, we might want to mark it as "failed" in the UI.
+    }
+  }, [user]);
 
   const submitReview = useCallback(async (matchId: string, enjoyed: boolean) => {
     const match = matches.find(m => m.id === matchId);

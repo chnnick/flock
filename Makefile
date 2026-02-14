@@ -1,4 +1,4 @@
-.PHONY: help setup setup-api setup-mobile run run-api run-mobile lint lint-api lint-mobile test test-api test-mobile clean
+.PHONY: help setup setup-api setup-mobile run run-api run-mobile stop lint lint-api lint-mobile test test-api test-mobile clean
 
 # Setup
 setup: setup-api setup-mobile ## Set up entire project
@@ -6,9 +6,8 @@ setup: setup-api setup-mobile ## Set up entire project
 
 setup-api: ## Set up API (Python venv + dependencies)
 	@echo "Setting up API"
-	cd api && python -m venv venv && \
-		. venv/bin/activate && \
-		pip install -r requirements.txt -r requirements-dev.txt
+	cd api && python3 -m venv venv && \
+		venv/bin/pip install -r requirements.txt
 	@echo "API ready"
 
 setup-mobile: ## Set up mobile app (npm install)

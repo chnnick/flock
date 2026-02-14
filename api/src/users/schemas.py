@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserCreate(BaseModel):
@@ -28,6 +28,7 @@ class UserResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    @field_serializer("id")
-    def serialize_id(self, v):
-        return str(v) if v is not None else v
+    @field_validator("id", mode="before")
+    @classmethod
+    def convert_objectid(cls, v):
+        return str(v)

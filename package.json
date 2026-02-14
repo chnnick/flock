@@ -13,6 +13,7 @@
     "expo:dev": "cd mobile && npx expo start --localhost",
     "expo:start:static:build": "cd mobile && npx expo start --no-dev --minify --localhost",
     "expo:static:build": "cd mobile && node scripts/build.js",
+    "test:api": "cd api && venv/bin/pytest tests/ -v",
     "lint": "cd mobile && npx expo lint",
     "lint:fix": "cd mobile && npx expo lint --fix",
     "android": "cd mobile && npx expo run:android",

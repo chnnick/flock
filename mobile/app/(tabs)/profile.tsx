@@ -15,24 +15,24 @@ export default function ProfileScreen() {
   const completedCommutes = matches.filter(m => m.status === 'completed' || m.status === 'active').length;
 
   const handleLogout = () => {
+    const doLogout = async () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      await logout();
+      router.replace('/(onboarding)');
+    };
     if (Platform.OS === 'web') {
-      logout();
-      router.replace('/');
+      doLogout();
       return;
     }
     Alert.alert(
       'Sign Out',
-      'Are you sure you want to sign out? This will clear all your data.',
+      'Are you sure you want to sign out? You will need to create a new account to use the app again.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: async () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            await logout();
-            router.replace('/');
-          },
+          onPress: doLogout,
         },
       ],
     );

@@ -4,5 +4,9 @@ auth0-fastapi-api>=1.0.0b5
 pydantic-settings
 pymongo[srv]
 beanie
+<<<<<<< HEAD
 pytest
 PyYAML
+=======
+pytest>=8.0.0
+>>>>>>> 67f01ec3b5409ef478645987fb9000ce3429e37e

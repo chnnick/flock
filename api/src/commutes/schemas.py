@@ -40,8 +40,6 @@ class CommuteCreate(BaseModel):
     enable_queue_flow: bool = False
     enable_suggestions_flow: bool = True
     queue_days_of_week: list[int] = Field(default_factory=list)
-    route_segments: list[RouteSegmentPayload] = Field(default_factory=list)
-    route_coordinates: list[tuple[float, float]] = Field(default_factory=list)
 
 
 class CommuteUpdate(BaseModel):
@@ -55,8 +53,6 @@ class CommuteUpdate(BaseModel):
     enable_queue_flow: bool | None = None
     enable_suggestions_flow: bool | None = None
     queue_days_of_week: list[int] | None = None
-    route_segments: list[RouteSegmentPayload] | None = None
-    route_coordinates: list[tuple[float, float]] | None = None
 
 
 class CommuteResponse(BaseModel):

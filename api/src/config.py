@@ -16,5 +16,8 @@ class Settings(BaseSettings):
     AUTH0_AUDIENCE: str
     MONGO_URI: str
     GEMINI_API_KEY: str
+    OTP_BASE_URL: str | None = None
+    OTP_GRAPHQL_PATH: str = "/otp/routers/default/index/graphql"
+    OTP_TIMEOUT_SECONDS: float = 15.0
 
 settings = Settings()

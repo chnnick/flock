@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from src.commutes.schemas import CommuteCreate, CommuteUpdate
 from src.db.models.commute import Commute
+from src.routing.service import generate_route_for_commute
 
 
 def _normalized_group_size(
@@ -22,12 +23,62 @@ async def get_my_commute(auth0_id: str) -> Commute | None:
     return await Commute.find_one(Commute.user_auth0_id == auth0_id)
 
 
+def _extract_point_lat_lng(point: object) -> tuple[float, float]:
+    if isinstance(point, dict):
+        return (float(point["lat"]), float(point["lng"]))
+    return (float(getattr(point, "lat")), float(getattr(point, "lng")))
+
+
+def _extract_start_minute(time_window: object) -> int:
+    if isinstance(time_window, dict):
+        return int(time_window["start_minute"])
+    return int(getattr(time_window, "start_minute"))
+
+
+async def _generate_route_geometry(
+    *,
+    start: object,
+    end: object,
+    time_window: object,
+    transport_mode: str,
+):
+    start_lat, start_lng = _extract_point_lat_lng(start)
+    end_lat, end_lng = _extract_point_lat_lng(end)
+    start_minute = _extract_start_minute(time_window)
+    return await generate_route_for_commute(
+        start_lat=start_lat,
+        start_lng=start_lng,
+        end_lat=end_lat,
+        end_lng=end_lng,
+        start_minute=start_minute,
+        transport_mode=transport_mode,
+    )
+
+
+def _should_refresh_route(payload: CommuteUpdate) -> bool:
+    return any(
+        value is not None
+        for value in (
+            payload.start,
+            payload.end,
+            payload.time_window,
+            payload.transport_mode,
+        )
+    )
+
+
 async def create_or_replace_commute(auth0_id: str, payload: CommuteCreate) -> Commute:
     existing = await get_my_commute(auth0_id)
     min_size, max_size = _normalized_group_size(
         payload.match_preference,
         payload.group_size_pref.min,
         payload.group_size_pref.max,
+    )
+    route_geometry = await _generate_route_geometry(
+        start=payload.start,
+        end=payload.end,
+        time_window=payload.time_window,
+        transport_mode=payload.transport_mode,
     )
 
     if existing:
@@ -41,10 +92,8 @@ async def create_or_replace_commute(auth0_id: str, payload: CommuteCreate) -> Co
         existing.enable_queue_flow = payload.enable_queue_flow
         existing.enable_suggestions_flow = payload.enable_suggestions_flow
         existing.queue_days_of_week = payload.queue_days_of_week
-        existing.route_segments = [
-            segment.model_dump() for segment in payload.route_segments
-        ]
-        existing.route_coordinates = payload.route_coordinates
+        existing.route_segments = route_geometry.route_segments
+        existing.route_coordinates = route_geometry.route_coordinates
         existing.updated_at = datetime.now(timezone.utc)
         await existing.save()
         return existing
@@ -61,8 +110,8 @@ async def create_or_replace_commute(auth0_id: str, payload: CommuteCreate) -> Co
         enable_queue_flow=payload.enable_queue_flow,
         enable_suggestions_flow=payload.enable_suggestions_flow,
         queue_days_of_week=payload.queue_days_of_week,
-        route_segments=[segment.model_dump() for segment in payload.route_segments],
-        route_coordinates=payload.route_coordinates,
+        route_segments=route_geometry.route_segments,
+        route_coordinates=route_geometry.route_coordinates,
     )
     await commute.insert()
     return commute
@@ -98,10 +147,6 @@ async def patch_my_commute(auth0_id: str, payload: CommuteUpdate) -> Commute | N
         commute.enable_suggestions_flow = payload.enable_suggestions_flow
     if payload.queue_days_of_week is not None:
         commute.queue_days_of_week = payload.queue_days_of_week
-    if payload.route_segments is not None:
-        commute.route_segments = [segment.model_dump() for segment in payload.route_segments]
-    if payload.route_coordinates is not None:
-        commute.route_coordinates = payload.route_coordinates
 
     if commute.match_preference == "individual":
         commute.group_size_pref = {"min": 2, "max": 2}
@@ -112,6 +157,16 @@ async def patch_my_commute(auth0_id: str, payload: CommuteUpdate) -> Commute | N
             commute.group_size_pref["max"],
         )
         commute.group_size_pref = {"min": min_size, "max": max_size}
+
+    if _should_refresh_route(payload):
+        route_geometry = await _generate_route_geometry(
+            start=commute.start,
+            end=commute.end,
+            time_window=commute.time_window,
+            transport_mode=commute.transport_mode,
+        )
+        commute.route_segments = route_geometry.route_segments
+        commute.route_coordinates = route_geometry.route_coordinates
 
     commute.updated_at = datetime.now(timezone.utc)
     await commute.save()

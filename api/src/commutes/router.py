@@ -12,6 +12,7 @@ from src.commutes.service import (
     set_queue_enabled,
     set_suggestions_enabled,
 )
+from src.routing.service import RouteGenerationError
 
 router = APIRouter(prefix="/commutes", tags=["commutes"])
 
@@ -26,13 +27,25 @@ async def get_me_commute(claims: AuthenticatedUser) -> CommuteResponse:
 
 @router.post("/me", response_model=CommuteResponse)
 async def create_me_commute(claims: AuthenticatedUser, body: CommuteCreate) -> CommuteResponse:
-    commute = await create_or_replace_commute(claims.user_id, body)
+    try:
+        commute = await create_or_replace_commute(claims.user_id, body)
+    except RouteGenerationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Route generation failed: {exc}",
+        ) from exc
     return CommuteResponse.model_validate(commute)
 
 
 @router.patch("/me", response_model=CommuteResponse)
 async def patch_me_commute(claims: AuthenticatedUser, body: CommuteUpdate) -> CommuteResponse:
-    commute = await patch_my_commute(claims.user_id, body)
+    try:
+        commute = await patch_my_commute(claims.user_id, body)
+    except RouteGenerationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Route generation failed: {exc}",
+        ) from exc
     if not commute:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Commute not found")
     return CommuteResponse.model_validate(commute)

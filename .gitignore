@@ -7,6 +7,7 @@ node_modules/
 /package-lock.json
 
 # Expo / React Native
+.expo/
 mobile/.expo/
 mobile/dist/
 mobile/static-build/

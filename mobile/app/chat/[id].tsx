@@ -1,23 +1,43 @@
 import { useState, useRef, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Platform, KeyboardAvoidingView, Modal, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
-import { useApp, ChatMessage } from '@/contexts/AppContext';
+import { useApp, ChatMessage, MatchProfile } from '@/contexts/AppContext';
 
 export default function ChatDetailScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { chatRooms, user, sendMessage, matches, submitReview } = useApp();
+  const { chatRooms, user, sendMessage, matches, addCommuteFriend, removeCommuteFriend, commuteFriends } = useApp();
   const [inputText, setInputText] = useState('');
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const room = chatRooms.find(r => r.id === id);
   const match = room ? matches.find(m => m.chatRoomId === room.id) : null;
+
+  const handleSend = useCallback(() => {
+    const text = inputText.trim();
+    if (!text || !room) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setInputText('');
+    sendMessage(room.id, text);
+  }, [inputText, room, sendMessage]);
+
+  const handleAddFriend = async (profile: MatchProfile) => {
+    if (commuteFriends.some(f => f.id === profile.id)) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await addCommuteFriend(profile);
+  };
+
+  const handleRemoveFriend = async (profileId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await removeCommuteFriend(profileId);
+  };
 
   if (!room || !user) {
     return (
@@ -35,28 +55,11 @@ export default function ChatDetailScreen() {
   }
 
   const reversedMessages = [...room.messages].reverse();
-
-  const handleSend = useCallback(() => {
-    const text = inputText.trim();
-    if (!text) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setInputText('');
-    sendMessage(room.id, text);
-  }, [inputText, room.id, sendMessage]);
-
-  const handleReview = (enjoyed: boolean) => {
-    if (!match) return;
-    Haptics.notificationAsync(
-      enjoyed ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning
-    );
-    submitReview(match.id, enjoyed);
-  };
+  const participantNames = room.participants.map(p => p.name.split(' ')[0]).join(', ');
 
   const renderMessage = ({ item }: { item: ChatMessage }) => (
     <MessageBubble message={item} isOwn={item.senderId === user.id} />
   );
-
-  const participantNames = room.participants.map(p => p.name.split(' ')[0]).join(', ');
 
   return (
     <KeyboardAvoidingView
@@ -70,28 +73,37 @@ export default function ChatDetailScreen() {
         </Pressable>
         <View style={styles.headerInfo}>
           <View style={styles.headerAvatars}>
-            {room.participants.slice(0, 2).map(p => (
-              <View key={p.id} style={[styles.headerAvatar, { backgroundColor: p.avatar }]}>
+            {room.participants.slice(0, room.type === 'group' ? 4 : 2).map((p, i) => (
+              <View
+                key={p.id}
+                style={[
+                  styles.headerAvatar,
+                  { backgroundColor: p.avatar, marginLeft: i > 0 ? -8 : 0, zIndex: room.participants.length - i },
+                ]}
+              >
                 <Text style={styles.headerAvatarText}>{p.name[0]}</Text>
               </View>
             ))}
+            {room.type === 'group' && room.participants.length > 4 && (
+              <View style={[styles.headerAvatar, styles.headerAvatarMore, { marginLeft: -8 }]}>
+                <Text style={styles.headerAvatarMoreText}>+{room.participants.length - 4}</Text>
+              </View>
+            )}
           </View>
           <View>
             <Text style={styles.headerName} numberOfLines={1}>{participantNames}</Text>
             <Text style={styles.headerSub}>
-              {match?.transportMode === 'walk' ? 'Walking' : 'Transit'} buddy
+              {match?.transportMode === 'walk' ? 'Walking' : 'Transit'}{room.type === 'group' ? ' group' : ' buddy'}
             </Text>
           </View>
         </View>
-        {match && match.status === 'active' && (
-          <Pressable
-            onPress={() => handleReview(true)}
-            hitSlop={8}
-            style={styles.completeButton}
-          >
-            <Ionicons name="checkmark-circle" size={20} color={Colors.textInverse} />
-          </Pressable>
-        )}
+        <Pressable
+          onPress={() => setShowInfoModal(true)}
+          hitSlop={8}
+          style={styles.infoButton}
+        >
+          <Ionicons name="information-circle-outline" size={28} color={Colors.text} />
+        </Pressable>
       </View>
 
       {match && match.status === 'active' && (
@@ -139,6 +151,78 @@ export default function ChatDetailScreen() {
           </Pressable>
         </View>
       </View>
+
+      <Modal
+        visible={showInfoModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowInfoModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { paddingBottom: insets.bottom + 24 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {room.type === 'group' ? 'Group Info' : 'Contact Info'}
+              </Text>
+              <Pressable
+                onPress={() => setShowInfoModal(false)}
+                hitSlop={8}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </Pressable>
+            </View>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {room.participants.map(profile => (
+                <View key={profile.id} style={styles.participantCard}>
+                  <View style={styles.participantHeader}>
+                    <View style={[styles.participantAvatar, { backgroundColor: profile.avatar }]}>
+                      <Text style={styles.participantAvatarText}>{profile.name[0]}</Text>
+                    </View>
+                    <View style={styles.participantInfo}>
+                      <Text style={styles.participantName}>{profile.name}</Text>
+                      <Text style={styles.participantOccupation}>{profile.occupation}</Text>
+                    </View>
+                  </View>
+                  {profile.interests.length > 0 && (
+                    <View style={styles.interestsRow}>
+                      <Text style={styles.interestsLabel}>Interests</Text>
+                      <View style={styles.interestChips}>
+                        {profile.interests.map(interest => (
+                          <View key={interest} style={styles.interestChip}>
+                            <Text style={styles.interestChipText}>{interest}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                  {commuteFriends.some(f => f.id === profile.id) ? (
+                    <Pressable
+                      style={styles.unfriendButton}
+                      onPress={() => handleRemoveFriend(profile.id)}
+                    >
+                      <Ionicons name="person-remove-outline" size={18} color={Colors.error} />
+                      <Text style={styles.unfriendButtonText}>Unfriend</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      style={styles.addFriendButton}
+                      onPress={() => handleAddFriend(profile)}
+                    >
+                      <Ionicons name="person-add-outline" size={18} color={Colors.textInverse} />
+                      <Text style={styles.addFriendButtonText}>Add as friend</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -224,6 +308,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.card,
   },
+  headerAvatarMore: {
+    backgroundColor: Colors.surface,
+  },
+  headerAvatarMoreText: {
+    fontSize: 12,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.text,
+  },
   headerAvatarText: {
     fontSize: 14,
     fontFamily: 'Outfit_700Bold',
@@ -239,14 +331,140 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_400Regular',
     color: Colors.textSecondary,
   },
-  completeButton: {
-    backgroundColor: Colors.accent,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+  infoButton: {
+    padding: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: Colors.card,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: 'Outfit_700Bold',
+    color: Colors.text,
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalScroll: {
+    maxHeight: 400,
+  },
+  modalScrollContent: {
+    padding: 20,
+    gap: 16,
+  },
+  participantCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  participantHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 12,
+    marginBottom: 12,
+  },
+  participantAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  participantAvatarText: {
+    fontSize: 20,
+    fontFamily: 'Outfit_700Bold',
+    color: Colors.textInverse,
+  },
+  participantInfo: {
+    flex: 1,
+  },
+  participantName: {
+    fontSize: 17,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.text,
+  },
+  participantOccupation: {
+    fontSize: 13,
+    fontFamily: 'Outfit_400Regular',
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  interestsRow: {
+    marginBottom: 12,
+  },
+  interestsLabel: {
+    fontSize: 12,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  interestChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  interestChip: {
+    backgroundColor: Colors.card,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  interestChipText: {
+    fontSize: 13,
+    fontFamily: 'Outfit_500Medium',
+    color: Colors.textSecondary,
+  },
+  addFriendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.accent,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  addFriendButtonText: {
+    fontSize: 15,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textInverse,
+  },
+  unfriendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.error + '15',
+    borderRadius: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.error + '40',
+  },
+  unfriendButtonText: {
+    fontSize: 15,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.error,
   },
   routeBanner: {
     flexDirection: 'row',

@@ -1,22 +1,25 @@
-import { View, Text, Pressable, StyleSheet, FlatList, Platform } from 'react-native';
+import { useState } from 'react';
+import { View, Text, Pressable, StyleSheet, FlatList, Platform, Animated } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated2, { FadeInDown } from 'react-native-reanimated';
+import { Swipeable, RectButton } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp, ChatRoom } from '@/contexts/AppContext';
 
 export default function ChatsScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const { chatRooms } = useApp();
+  const { chatRooms, deleteChatRoom } = useApp();
 
   const sortedRooms = [...chatRooms].sort((a, b) =>
     new Date(b.lastMessageTime || b.createdAt).getTime() - new Date(a.lastMessageTime || a.createdAt).getTime()
   );
 
   const renderItem = ({ item, index }: { item: ChatRoom; index: number }) => (
-    <ChatRoomItem room={item} index={index} />
+    <ChatRoomItem room={item} index={index} onDelete={() => deleteChatRoom(item.id)} />
   );
 
   return (
@@ -50,8 +53,32 @@ export default function ChatsScreen() {
   );
 }
 
-function ChatRoomItem({ room, index }: { room: ChatRoom; index: number }) {
+function ChatRoomItem({ room, index, onDelete }: { room: ChatRoom; index: number; onDelete: () => void }) {
   const { user } = useApp();
+  const [isSwipeOpen, setIsSwipeOpen] = useState(false);
+
+  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>) => {
+    const deleteOpacity = progress.interpolate({
+      inputRange: [0, 0.2, 1],
+      outputRange: [0, 0, 1],
+    });
+    return (
+      <View style={styles.swipeActionContainer}>
+        <Animated.View style={[styles.deleteActionWrapper, { opacity: deleteOpacity }]}>
+          <RectButton
+            style={styles.deleteAction}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onDelete();
+            }}
+          >
+            <Ionicons name="trash-outline" size={22} color={Colors.textInverse} />
+            <Text style={styles.deleteActionText}>Delete</Text>
+          </RectButton>
+        </Animated.View>
+      </View>
+    );
+  };
 
   const formatTime = (dateStr?: string) => {
     if (!dateStr) return '';
@@ -71,11 +98,19 @@ function ChatRoomItem({ room, index }: { room: ChatRoom; index: number }) {
   ).length > 0 ? Math.min(Math.floor(Math.random() * 3), 2) : 0;
 
   return (
-    <Animated.View entering={FadeInDown.delay(index * 80).duration(400)}>
-      <Pressable
-        style={({ pressed }) => [styles.chatItem, pressed && { opacity: 0.8, backgroundColor: Colors.surface }]}
-        onPress={() => router.push({ pathname: '/chat/[id]', params: { id: room.id } })}
+    <Animated2.View entering={FadeInDown.delay(index * 80).duration(400)}>
+      <Swipeable
+        renderRightActions={renderRightActions}
+        overshootRight={false}
+        friction={2}
+        onSwipeableWillOpen={() => setIsSwipeOpen(true)}
+        onSwipeableWillClose={() => setIsSwipeOpen(false)}
       >
+        <RectButton
+          style={styles.chatItem}
+          onPress={() => router.push({ pathname: '/chat/[id]', params: { id: room.id } })}
+          underlayColor={Colors.surface}
+        >
         <View style={styles.avatarRow}>
           {room.participants.slice(0, 2).map((p, i) => (
             <View
@@ -101,15 +136,16 @@ function ChatRoomItem({ room, index }: { room: ChatRoom; index: number }) {
         </View>
 
         <View style={styles.chatMeta}>
-          <Text style={styles.chatTime}>{formatTime(room.lastMessageTime)}</Text>
+          {!isSwipeOpen && <Text style={styles.chatTime}>{formatTime(room.lastMessageTime)}</Text>}
           {unreadCount > 0 && (
             <View style={styles.unreadBadge}>
               <Text style={styles.unreadText}>{unreadCount}</Text>
             </View>
           )}
         </View>
-      </Pressable>
-    </Animated.View>
+      </RectButton>
+      </Swipeable>
+    </Animated2.View>
   );
 }
 
@@ -130,6 +166,25 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 20,
     paddingBottom: 100,
+  },
+  swipeActionContainer: {
+    width: 80,
+    justifyContent: 'center',
+  },
+  deleteActionWrapper: {
+    flex: 1,
+  },
+  deleteAction: {
+    flex: 1,
+    backgroundColor: Colors.error,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteActionText: {
+    fontSize: 12,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textInverse,
+    marginTop: 4,
   },
   chatItem: {
     flexDirection: 'row',

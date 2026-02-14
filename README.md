@@ -8,21 +8,26 @@ Two-folder layout:
 ## Setup
 
 ```bash
-make setup          # both api + mobile
-# or
-make setup-api      # api only (venv + pip install)
-make setup-mobile   # mobile only (npm ci in mobile/)
+# API (from repo root)
+cd api && python3 -m venv venv && venv/bin/pip install -r requirements.txt
+
+# Mobile (from repo root; also runs postinstall)
+npm install
 ```
 
 ## Run
 
 ```bash
-make run-api        # FastAPI backend on :8000
-make run-mobile     # Expo dev server (Metro)
+npm run run:api     # FastAPI on http://localhost:8000 (macOS/Linux; requires api/venv)
+npm start           # Expo dev server (or: npm run run:mobile)
 ```
+
+Run API and mobile in separate terminals.
 
 ## Clean
 
 ```bash
-make clean   # removes api/venv, node_modules, Python caches
+rm -rf api/venv
+find . -type d -name node_modules -exec rm -rf {} + 2>/dev/null || true
+find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 ```

@@ -8,11 +8,16 @@ import Colors from '@/constants/colors';
 import { useApp, Match } from '@/contexts/AppContext';
 import { useState } from 'react';
 
+function isGroupMatch(match: Match): boolean {
+  return match.participants.length > 1 || (match.maxCapacity != null && match.maxCapacity > 1);
+}
+
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { matches, commute, acceptMatch, declineMatch, triggerMatching } = useApp();
   const [loadingMatch, setLoadingMatch] = useState<string | null>(null);
+  const [isQueuing, setIsQueuing] = useState(false);
 
   const pendingMatches = matches.filter(m => m.status === 'pending');
   const activeMatches = matches.filter(m => m.status === 'active');
@@ -32,6 +37,21 @@ export default function MatchesScreen() {
   const handleRefresh = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await triggerMatching();
+  };
+
+  const handleQueue = async () => {
+    if (!commute || pendingMatches.length === 0 || isQueuing) return;
+    const wantGroup = commute.matchPreference === 'group';
+    const matchingPreference = pendingMatches.filter(m => isGroupMatch(m) === wantGroup);
+    const bestMatch = matchingPreference.length > 0
+      ? matchingPreference.reduce((a, b) => a.compositeScore >= b.compositeScore ? a : b)
+      : null;
+    if (!bestMatch) return;
+    setIsQueuing(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await acceptMatch(bestMatch.id);
+    setIsQueuing(false);
+    router.push({ pathname: '/chat/[id]', params: { id: bestMatch.chatRoomId } });
   };
 
   return (
@@ -82,12 +102,43 @@ export default function MatchesScreen() {
         ) : (
           <>
             {pendingMatches.length > 0 && (
+              <>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.queueButton,
+                    pressed && styles.queueButtonPressed,
+                    isQueuing && styles.queueButtonDisabled,
+                  ]}
+                  onPress={handleQueue}
+                  disabled={isQueuing}
+                >
+                  {isQueuing ? (
+                    <ActivityIndicator color={Colors.textInverse} size="small" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name={commute?.matchPreference === 'group' ? 'people' : 'person'}
+                        size={20}
+                        color={Colors.textInverse}
+                      />
+                      <Text style={styles.queueButtonText}>
+                        Queue for {commute?.matchPreference === 'group' ? 'Group' : '1:1'}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+                <Text style={styles.queueHint}>
+                  Auto-match and join, or browse below
+                </Text>
+              </>
+            )}
+            {pendingMatches.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
                   New Matches ({pendingMatches.length})
                 </Text>
                 {pendingMatches.map((match, index) => {
-                  const isGroup = match.participants.length > 1 || (match.maxCapacity != null && match.maxCapacity > 1);
+                  const isGroup = isGroupMatch(match);
                   return isGroup ? (
                     <GroupMatchCard
                       key={match.id}
@@ -116,10 +167,9 @@ export default function MatchesScreen() {
                 <Text style={styles.sectionTitle}>
                   Active ({activeMatches.length})
                 </Text>
-                {activeMatches.map((match, index) => {
-                  const isGroup = match.participants.length > 1 || (match.maxCapacity != null && match.maxCapacity > 1);
-                  return <ActiveMatchCard key={match.id} match={match} index={index} isGroup={isGroup} />;
-                })}
+                {activeMatches.map((match, index) => (
+                  <ActiveMatchCard key={match.id} match={match} index={index} isGroup={isGroupMatch(match)} />
+                ))}
               </View>
             )}
           </>
@@ -400,6 +450,35 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 24,
+  },
+  queueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.secondary,
+    borderRadius: 16,
+    paddingVertical: 16,
+    marginBottom: 8,
+  },
+  queueButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  queueButtonDisabled: {
+    opacity: 0.7,
+  },
+  queueButtonText: {
+    fontSize: 17,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textInverse,
+  },
+  queueHint: {
+    fontSize: 13,
+    fontFamily: 'Outfit_400Regular',
+    color: Colors.textSecondary,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 16,

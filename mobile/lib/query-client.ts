@@ -1,6 +1,9 @@
 import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import Constants from "expo-constants";
+import * as SecureStore from "expo-secure-store";
+
+const AUTH_TOKEN_KEY = "auth_token";
 
 function getPublicEnvVar(name: string): string | undefined {
   const valueFromProcess = process.env[name];
@@ -12,6 +15,18 @@ function getPublicEnvVar(name: string): string | undefined {
   return typeof valueFromExpoConfig === "string" && valueFromExpoConfig
     ? valueFromExpoConfig
     : undefined;
+}
+
+export async function getAuthToken(): Promise<string | null> {
+  return await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+}
+
+export async function setAuthToken(token: string): Promise<void> {
+  await SecureStore.setItemAsync(AUTH_TOKEN_KEY, token);
+}
+
+export async function deleteAuthToken(): Promise<void> {
+  await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
 }
 
 /**
@@ -35,23 +50,21 @@ export function getApiUrl(): string {
   return url.href;
 }
 
-function getAuthHeader(): Record<string, string> {
-  const token = getPublicEnvVar("EXPO_PUBLIC_API_TOKEN");
+/** Only used when EXPO_PUBLIC_DEV_AUTH0_ID is set (e.g. local dev). Backend can use it to impersonate that user. Leave unset in production. */
+function getAuthHeaderSync(): Record<string, string> {
   const devAuth0Id = getPublicEnvVar("EXPO_PUBLIC_DEV_AUTH0_ID");
   const headers: Record<string, string> = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
   if (devAuth0Id) {
     headers["x-dev-auth0-id"] = devAuth0Id;
   }
   return headers;
 }
 
-async function throwIfResNotOk(res: Response) {
+async function throwIfResNotOk(res: Response, url?: string) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const urlPart = url ? ` ${url}` : '';
+    throw new Error(`${res.status}: ${text}${urlPart}`);
   }
 }
 
@@ -62,18 +75,22 @@ export async function apiRequest(
 ): Promise<Response> {
   const baseUrl = getApiUrl();
   const url = new URL(route, baseUrl);
+  const storedToken = await getAuthToken();
+  const envToken = getPublicEnvVar("EXPO_PUBLIC_API_TOKEN");
+  const token = storedToken ?? envToken ?? undefined;
 
   const res = await fetch(url.toString(), {
     method,
     headers: {
       ...(data ? { "Content-Type": "application/json" } : {}),
-      ...getAuthHeader(),
+      ...getAuthHeaderSync(),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
 
-  await throwIfResNotOk(res);
+  await throwIfResNotOk(res, route);
   return res;
 }
 
@@ -85,10 +102,14 @@ export const getQueryFn: <T>(options: {
   async ({ queryKey }) => {
     const baseUrl = getApiUrl();
     const url = new URL(queryKey.join("/") as string, baseUrl);
+    const storedToken = await getAuthToken();
+    const envToken = getPublicEnvVar("EXPO_PUBLIC_API_TOKEN");
+    const token = storedToken ?? envToken ?? undefined;
 
     const res = await fetch(url.toString(), {
       headers: {
-        ...getAuthHeader(),
+        ...getAuthHeaderSync(),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       credentials: "include",
     });
@@ -97,7 +118,7 @@ export const getQueryFn: <T>(options: {
       return null;
     }
 
-    await throwIfResNotOk(res);
+    await throwIfResNotOk(res, queryKey.join("/"));
     return await res.json();
   };
 

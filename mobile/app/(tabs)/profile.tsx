@@ -3,22 +3,31 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useAuth0 } from 'react-native-auth0';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+
+const AUTH0_CUSTOM_SCHEME = process.env.EXPO_PUBLIC_AUTH0_CUSTOM_SCHEME ?? 'flock';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { user, commuteFriends, matches, logout, removeCommuteFriend, getOrCreateChatRoomForFriend } = useApp();
+  const { clearSession } = useAuth0();
 
   const completedCommutes = matches.filter(m => m.status === 'completed' || m.status === 'active').length;
 
   const handleLogout = () => {
     const doLogout = async () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      try {
+        await clearSession(undefined, { customScheme: AUTH0_CUSTOM_SCHEME });
+      } catch {
+        // Ignore if no session or clearSession fails
+      }
       await logout();
-      router.replace('/(onboarding)');
+      router.replace('/(onboarding)/sign-in' as import('expo-router').Href);
     };
     if (Platform.OS === 'web') {
       doLogout();

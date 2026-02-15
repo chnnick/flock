@@ -1,20 +1,30 @@
 import { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { router } from 'expo-router';
+import { Href, router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { getAuthToken } from '@/lib/query-client';
 
 export default function IndexScreen() {
   const { isLoading, isOnboarded } = useApp();
 
   useEffect(() => {
-    if (isLoading) return;
+    const decide = async () => {
+      if (isLoading) return;
 
-    if (isOnboarded) {
-      router.replace('/(tabs)');
-    } else {
-      router.replace('/(onboarding)');
-    }
+      const token = await getAuthToken();
+      if (!token) {
+        router.replace('/(onboarding)/sign-in' as Href);
+        return;
+      }
+
+      if (isOnboarded) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(onboarding)');
+      }
+    };
+    decide();
   }, [isLoading, isOnboarded]);
 
   return (

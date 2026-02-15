@@ -18,6 +18,7 @@ import {
   runMatching,
   sendChatMessage,
 } from '@/lib/backend-api';
+import { deleteAuthToken } from '@/lib/query-client';
 import { ApiCommuteResponse, ApiMatchParticipantProfile, ApiMatchSuggestion, ApiUser } from '@/lib/api-types';
 
 export interface UserProfile {
@@ -599,7 +600,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCommuteFriends([]);
     setIsOnboarded(false);
     setPendingReview(null);
-    await AsyncStorage.removeItem('flock_friends');
+    await deleteAuthToken();
+    await AsyncStorage.multiRemove(['flock_friends', 'flock_user', 'flock_commute', 'flock_matches', 'flock_chats', 'flock_onboarded']);
   }, []);
 
   const value = useMemo(() => ({

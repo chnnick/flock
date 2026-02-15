@@ -5,6 +5,7 @@ from typing import Literal
 
 from beanie.odm.operators.find.comparison import In
 
+from src.db.models.chat_message import ChatMessage
 from src.db.models.chat_room import ChatRoom
 from src.db.models.commute import Commute
 from src.db.models.match_suggestion import (
@@ -520,11 +521,23 @@ async def accept_suggestion(auth0_id: str, suggestion_id: str) -> MatchSuggestio
 
 async def pass_suggestion(auth0_id: str, suggestion_id: str) -> MatchSuggestion | None:
     suggestion = await MatchSuggestion.get(suggestion_id)
-    if not suggestion or suggestion.source != "suggested":
+    if not suggestion:
         return None
     if auth0_id not in suggestion.participants:
         return None
-    if suggestion.status != "suggested":
+
+    # Stop/leave an active match — delete chat, messages, and the match document from the DB
+    if suggestion.status == "active":
+        if suggestion.chat_room_id:
+            await ChatMessage.find(ChatMessage.chat_room_id == suggestion.chat_room_id).delete()
+            room = await ChatRoom.get(suggestion.chat_room_id)
+            if room:
+                await room.delete()
+        await suggestion.delete()
+        return suggestion
+
+    # Pass on a suggested (not yet accepted) match
+    if suggestion.source != "suggested" or suggestion.status != "suggested":
         return suggestion
 
     now = datetime.now(timezone.utc)

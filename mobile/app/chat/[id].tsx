@@ -15,11 +15,12 @@ export default function ChatDetailScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { chatRooms, user, sendMessage, matches, addCommuteFriend, removeCommuteFriend, commuteFriends } = useApp();
+  const { chatRooms, user, sendMessage, matches, addCommuteFriend, removeCommuteFriend, commuteFriends, declineMatch, deleteChatRoom } = useApp();
   const [inputText, setInputText] = useState('');
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showGeminiModal, setShowGeminiModal] = useState(false);
   const [geminiLoading, setGeminiLoading] = useState(false);
+  const [stopMatchLoading, setStopMatchLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const room = chatRooms.find(r => r.id === id);
@@ -43,6 +44,20 @@ export default function ChatDetailScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await removeCommuteFriend(profileId);
   };
+
+  const handleStopMatch = useCallback(async () => {
+    if (!match || !room || stopMatchLoading) return;
+    setStopMatchLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowInfoModal(false);
+    try {
+      await declineMatch(match.id);
+      await deleteChatRoom(room.id);
+      router.back();
+    } finally {
+      setStopMatchLoading(false);
+    }
+  }, [match, room, declineMatch, deleteChatRoom]);
 
   const roomToApiMessages = useCallback((r: typeof room): MessageForApi[] => {
     if (!r || !user) return [];
@@ -231,13 +246,32 @@ export default function ChatDetailScreen() {
               <Text style={styles.modalTitle}>
                 {room.type === 'group' ? 'Group Info' : 'Contact Info'}
               </Text>
-              <Pressable
-                onPress={() => setShowInfoModal(false)}
-                hitSlop={8}
-                style={styles.modalCloseButton}
-              >
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </Pressable>
+              <View style={styles.modalHeaderActions}>
+                {match?.status === 'active' && (
+                  <Pressable
+                    style={[styles.stopMatchHeaderButton, stopMatchLoading && styles.stopMatchButtonDisabled]}
+                    onPress={handleStopMatch}
+                    disabled={stopMatchLoading}
+                    hitSlop={8}
+                  >
+                    {stopMatchLoading ? (
+                      <ActivityIndicator size="small" color={Colors.textInverse} />
+                    ) : (
+                      <>
+                        <Ionicons name="close-circle-outline" size={18} color={Colors.textInverse} />
+                        <Text style={styles.stopMatchHeaderButtonText}>Stop match</Text>
+                      </>
+                    )}
+                  </Pressable>
+                )}
+                <Pressable
+                  onPress={() => setShowInfoModal(false)}
+                  hitSlop={8}
+                  style={styles.modalCloseButton}
+                >
+                  <Ionicons name="close" size={24} color={Colors.text} />
+                </Pressable>
+              </View>
             </View>
             <ScrollView
               style={styles.modalScroll}
@@ -475,6 +509,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   modalTitle: {
+    flex: 1,
     fontSize: 20,
     fontFamily: 'Outfit_700Bold',
     color: Colors.text,
@@ -572,6 +607,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: 'Outfit_600SemiBold',
     color: Colors.error,
+  },
+  modalHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  stopMatchHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.error,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  stopMatchButtonDisabled: {
+    opacity: 0.7,
+  },
+  stopMatchHeaderButtonText: {
+    fontSize: 13,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textInverse,
   },
   routeBanner: {
     flexDirection: 'row',

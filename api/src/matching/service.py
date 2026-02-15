@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
+from beanie.odm.operators.find.comparison import In
+
 from src.db.models.chat_room import ChatRoom
 from src.db.models.commute import Commute
 from src.db.models.match_suggestion import (
@@ -20,6 +22,18 @@ from src.matching.algorithm import (
     run_matching_algorithm,
 )
 from src.matching.settings import MATCHING_SETTINGS
+
+
+async def _remove_from_queue_for_participants(participants: list[str]) -> None:
+    commutes = await Commute.find(In(Commute.user_auth0_id, participants)).to_list()
+    if not commutes:
+        return
+    now = datetime.now(timezone.utc)
+    for commute in commutes:
+        commute.enable_queue_flow = False
+        commute.status = "paused"
+        commute.updated_at = now
+        await commute.save()
 
 
 def _flatten_route_coordinates(commute: Commute) -> list[tuple[float, float]]:
@@ -92,18 +106,17 @@ def _candidate_to_match_doc(
 
 
 async def _eligible_users_and_commutes(kind: MatchKind) -> tuple[list[User], list[Commute]]:
-    queued_commutes = await Commute.find(
-        Commute.status == "queued",
+    suggestion_commutes = await Commute.find(
         Commute.enable_suggestions_flow == True,
         Commute.match_preference == kind,
     ).to_list()
-    if not queued_commutes:
+    if not suggestion_commutes:
         return ([], [])
 
-    user_ids = [commute.user_auth0_id for commute in queued_commutes]
-    users = await User.find(User.auth0_id.in_(user_ids)).to_list()
+    user_ids = [commute.user_auth0_id for commute in suggestion_commutes]
+    users = await User.find(In(User.auth0_id, user_ids)).to_list()
     users_by_id = {user.auth0_id: user for user in users}
-    filtered_commutes = [commute for commute in queued_commutes if commute.user_auth0_id in users_by_id]
+    filtered_commutes = [commute for commute in suggestion_commutes if commute.user_auth0_id in users_by_id]
     return (list(users_by_id.values()), filtered_commutes)
 
 
@@ -183,7 +196,7 @@ async def run_queue_assignments_for_kind(kind: MatchKind, commute_date: date) ->
         return []
 
     user_ids = [commute.user_auth0_id for commute in queued_commutes]
-    users = await User.find(User.auth0_id.in_(user_ids)).to_list()
+    users = await User.find(In(User.auth0_id, user_ids)).to_list()
     if len(users) < 2:
         return []
     users_by_id = {user.auth0_id: user for user in users}
@@ -201,22 +214,103 @@ async def run_queue_assignments_for_kind(kind: MatchKind, commute_date: date) ->
         shared_meters_per_minute=MATCHING_SETTINGS.algorithm.shared_meters_per_minute,
     )
     created: list[MatchSuggestion] = []
-    existing_matches = await MatchSuggestion.find(
+    now = datetime.now(timezone.utc)
+    existing_queue_matches = await MatchSuggestion.find(
         MatchSuggestion.source == "queue_assigned",
         MatchSuggestion.commute_date == commute_date,
         MatchSuggestion.kind == kind,
     ).to_list()
+    existing_suggested_matches = await MatchSuggestion.find(
+        MatchSuggestion.source == "suggested",
+        MatchSuggestion.kind == kind,
+        In(MatchSuggestion.status, ["suggested", "active"]),
+    ).to_list()
+    existing_active_queue_matches = await MatchSuggestion.find(
+        MatchSuggestion.source == "queue_assigned",
+        MatchSuggestion.kind == kind,
+        MatchSuggestion.status == "active",
+    ).to_list()
+    open_statuses = {"suggested", "assigned", "active"}
+    queued_user_ids = {commute.user_auth0_id for commute in queued_commutes}
     consumed_users: set[str] = {
-        user_id for match in existing_matches for user_id in match.participants
+        user_id
+        for match in [*existing_queue_matches, *existing_active_queue_matches]
+        if match.status in open_statuses
+        for user_id in match.participants
     }
+    suggested_by_participants: dict[frozenset[str], MatchSuggestion] = {
+        frozenset(match.participants): match
+        for match in existing_suggested_matches
+        if match.status in {"suggested", "active"}
+    }
+
+    promotable_suggestions = [
+        match
+        for match in existing_suggested_matches
+        if match.status == "suggested"
+        and all(user_id in queued_user_ids for user_id in match.participants)
+    ]
+    promotable_suggestions.sort(key=lambda item: item.scores.composite_score, reverse=True)
+    for suggestion in promotable_suggestions:
+        if any(user_id in consumed_users for user_id in suggestion.participants):
+            continue
+        for decision in suggestion.decisions:
+            decision.accepted_at = now
+            decision.passed_at = None
+            decision.pass_cooldown_until = None
+        if not suggestion.chat_room_id:
+            room = ChatRoom(
+                match_id=str(suggestion.id),
+                participants=suggestion.participants,
+                type="group" if len(suggestion.participants) > 2 else "dm",
+            )
+            await room.insert()
+            suggestion.chat_room_id = str(room.id)
+        suggestion.source = "queue_assigned"
+        suggestion.status = "active"
+        suggestion.commute_date = commute_date
+        suggestion.updated_at = now
+        await suggestion.save()
+        await _remove_from_queue_for_participants(suggestion.participants)
+        for user_id in suggestion.participants:
+            consumed_users.add(user_id)
+        created.append(suggestion)
+
     for candidate in candidates:
+        participant_set = frozenset(candidate.participants)
+        suggested_match = suggested_by_participants.get(participant_set)
+        if suggested_match:
+            for decision in suggested_match.decisions:
+                decision.accepted_at = now
+                decision.passed_at = None
+                decision.pass_cooldown_until = None
+            if not suggested_match.chat_room_id:
+                room = ChatRoom(
+                    match_id=str(suggested_match.id),
+                    participants=suggested_match.participants,
+                    type="group" if len(suggested_match.participants) > 2 else "dm",
+                )
+                await room.insert()
+                suggested_match.chat_room_id = str(room.id)
+            suggested_match.source = "queue_assigned"
+            suggested_match.status = "active"
+            suggested_match.commute_date = commute_date
+            suggested_match.updated_at = now
+            await suggested_match.save()
+            await _remove_from_queue_for_participants(suggested_match.participants)
+            for user_id in candidate.participants:
+                consumed_users.add(user_id)
+            created.append(suggested_match)
+            continue
+
         if any(user_id in consumed_users for user_id in candidate.participants):
             continue
         existing = next(
             (
                 match
-                for match in existing_matches
-                if set(match.participants) == set(candidate.participants)
+                for match in existing_queue_matches
+                if match.status in open_statuses
+                and set(match.participants) == set(candidate.participants)
             ),
             None,
         )
@@ -238,8 +332,9 @@ async def run_queue_assignments_for_kind(kind: MatchKind, commute_date: date) ->
         await room.insert()
         document.chat_room_id = str(room.id)
         document.status = "active"
-        document.updated_at = datetime.now(timezone.utc)
+        document.updated_at = now
         await document.save()
+        await _remove_from_queue_for_participants(document.participants)
         for user_id in candidate.participants:
             consumed_users.add(user_id)
         created.append(document)
@@ -261,6 +356,8 @@ async def list_suggestions_for_user(auth0_id: str, kind: MatchKind) -> list[Matc
         if not decision:
             continue
         if decision.pass_cooldown_until and decision.pass_cooldown_until > now:
+            continue
+        if decision.accepted_at is not None:
             continue
         visible.append(suggestion)
     return visible

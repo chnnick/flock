@@ -28,6 +28,7 @@ class RouteSegment(BaseModel):
     coordinates: list[tuple[float, float]]
     label: str | None = None
     transit_line: str | None = None
+    duration_minutes: int | None = None
 
 
 class Commute(Document):
@@ -45,6 +46,7 @@ class Commute(Document):
     queue_days_of_week: list[int] = Field(default_factory=list)
     route_segments: list[RouteSegment] = Field(default_factory=list)
     route_coordinates: list[tuple[float, float]] = Field(default_factory=list)
+    otp_total_duration_minutes: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

@@ -6,7 +6,6 @@ import {
   createMeCommute,
   createMeUser,
   getActive,
-  getAssignments,
   getChatRoom,
   getChats,
   getMeCommute,
@@ -14,6 +13,8 @@ import {
   getSuggestions,
   passSuggestion,
   patchMeUser,
+  queueMeCommute,
+  pauseMeCommute,
   runMatching,
   sendChatMessage,
 } from '@/lib/backend-api';
@@ -46,8 +47,10 @@ export interface Commute {
     coordinates: [number, number][];
     label?: string;
     transitLine?: string;
+    durationMinutes?: number;
   }[];
   routeCoordinates: [number, number][];
+  otpTotalDurationMinutes?: number;
 }
 
 export interface MatchProfile {
@@ -124,6 +127,8 @@ interface AppContextValue {
   completeOnboarding: () => Promise<void>;
   clearPendingReview: () => void;
   triggerMatching: () => Promise<void>;
+  joinQueue: () => Promise<void>;
+  leaveQueue: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -198,8 +203,10 @@ function commuteFromApi(commute: ApiCommuteResponse): Commute {
       coordinates: segment.coordinates,
       label: segment.label ?? undefined,
       transitLine: segment.transit_line ?? undefined,
+      durationMinutes: segment.duration_minutes ?? undefined,
     })),
     routeCoordinates: commute.route_coordinates,
+    otpTotalDurationMinutes: commute.otp_total_duration_minutes ?? undefined,
   };
 }
 
@@ -227,7 +234,7 @@ function participantProfile(participantId: string, self: UserProfile | null): Ma
 
 function participantProfileFromApi(participant: ApiMatchParticipantProfile, self: UserProfile | null): MatchProfile {
   if (self && participant.auth0_id === self.id) {
-    return {
+      return {
       id: self.id,
       name: self.name,
       occupation: self.occupation,
@@ -270,12 +277,6 @@ function matchFromApi(match: ApiMatchSuggestion, self: UserProfile | null): Matc
   };
 }
 
-function tomorrowDateKey(): string {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return tomorrow.toISOString().slice(0, 10);
-}
-
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<UserProfile | null>(null);
   const [commute, setCommuteState] = useState<Commute | null>(null);
@@ -287,27 +288,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isOnboarded, setIsOnboarded] = useState(false);
 
   const refreshMatchesAndChats = useCallback(async (currentUser: UserProfile | null) => {
-    const [suggestedIndividual, suggestedGroup, activeIndividual, activeGroup, assignedIndividual, assignedGroup] = await Promise.all([
+    const [suggestedIndividual, suggestedGroup, activeIndividual, activeGroup] = await Promise.all([
       getSuggestions('individual'),
       getSuggestions('group'),
       getActive('individual'),
       getActive('group'),
-      getAssignments('individual', tomorrowDateKey()),
-      getAssignments('group', tomorrowDateKey()),
     ]);
 
+    const allMatches = [
+      ...suggestedIndividual,
+      ...suggestedGroup,
+      ...activeIndividual,
+      ...activeGroup,
+    ];
     const mergedMatches = new Map<string, ApiMatchSuggestion>();
-    [...suggestedIndividual, ...suggestedGroup, ...activeIndividual, ...activeGroup, ...assignedIndividual, ...assignedGroup]
-      .forEach((match) => mergedMatches.set(match.id, match));
-    const mappedMatches = [...mergedMatches.values()]
+    allMatches.forEach((match) => mergedMatches.set(match.id, match));
+    const visibleMatches = Array.from(mergedMatches.values()).filter(
+      (match) => match.source === 'suggested' || (match.source === 'queue_assigned' && match.status === 'active'),
+    );
+    const matchById = new Map<string, ApiMatchSuggestion>(visibleMatches.map((match) => [match.id, match]));
+    const mappedMatches = visibleMatches
       .map((item) => matchFromApi(item, currentUser))
       .sort((a, b) => b.compositeScore - a.compositeScore);
     setMatches(mappedMatches);
 
     const rooms = await getChats();
     const details = await Promise.all(rooms.map((room) => getChatRoom(room.id)));
-    const mappedRooms: ChatRoom[] = details.map((room) => {
-      const roomParticipants = room.participants
+    const mappedRooms: ChatRoom[] = details
+      .filter((room) => matchById.has(room.match_id))
+      .map((room) => {
+        const relatedMatch = matchById.get(room.match_id);
+        const roomParticipants = relatedMatch
+          ? relatedMatch.participants
+            .filter((participant) => participant.auth0_id !== currentUser?.id)
+            .map((participant) => participantProfileFromApi(participant, currentUser))
+          : room.participants
         .filter((participant) => participant !== currentUser?.id)
         .map((id) => participantProfile(id, currentUser));
       return {
@@ -329,6 +344,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
     });
     setChatRooms(mappedRooms.sort((a, b) => new Date(b.lastMessageTime ?? b.createdAt).getTime() - new Date(a.lastMessageTime ?? a.createdAt).getTime()));
+
+    try {
+      const latestCommute = await getMeCommute();
+      setCommuteState(commuteFromApi(latestCommute));
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        setCommuteState(null);
+      } else {
+        console.error('Failed to refresh commute state', error);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -366,10 +392,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } else {
           console.error('Failed to initialize app data', error);
         }
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    } finally {
+      setIsLoading(false);
+    }
+  };
     load();
   }, [refreshMatchesAndChats]);
 
@@ -421,7 +447,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refreshMatchesAndChats, user]);
 
   const triggerMatching = useCallback(async () => {
+    await runMatching(false);
+    await refreshMatchesAndChats(user);
+  }, [refreshMatchesAndChats, user]);
+
+  const joinQueue = useCallback(async () => {
+    const queued = await queueMeCommute();
+    setCommuteState(commuteFromApi(queued));
     await runMatching(true);
+    await refreshMatchesAndChats(user);
+  }, [refreshMatchesAndChats, user]);
+
+  const leaveQueue = useCallback(async () => {
+    const paused = await pauseMeCommute();
+    setCommuteState(commuteFromApi(paused));
     await refreshMatchesAndChats(user);
   }, [refreshMatchesAndChats, user]);
 
@@ -446,7 +485,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     await sendChatMessage(chatRoomId, text);
     const room = await getChatRoom(chatRoomId);
-    const roomParticipants = room.participants
+    const relatedMatch = matches.find((item) => item.chatRoomId === room.id);
+    const roomParticipants = relatedMatch?.participants
+      ?? room.participants
       .filter((participant) => participant !== user?.id)
       .map((id) => participantProfile(id, user));
     const mappedRoom: ChatRoom = {
@@ -465,12 +506,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastMessage: room.last_message ?? undefined,
       lastMessageTime: room.last_message_time ?? undefined,
       createdAt: room.created_at,
-    };
+            };
     setChatRooms((prev) => {
       const withoutCurrent = prev.filter((item) => item.id !== chatRoomId);
       return [mappedRoom, ...withoutCurrent];
     });
-  }, [user]);
+  }, [matches, user]);
 
   const submitReview = useCallback(async (matchId: string, enjoyed: boolean) => {
     const match = matches.find((item) => item.id === matchId);
@@ -558,6 +599,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     completeOnboarding,
     clearPendingReview,
     triggerMatching,
+    joinQueue,
+    leaveQueue,
     logout,
   }), [
     user,
@@ -581,6 +624,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     completeOnboarding,
     clearPendingReview,
     triggerMatching,
+    joinQueue,
+    leaveQueue,
     logout,
   ]);
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from beanie.odm.operators.find.comparison import In
 from fastapi import APIRouter, HTTPException, Query, status
 
 from src.auth.dependencies import AuthenticatedUser
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/matching", tags=["matching"])
 
 
 async def _to_response(item: MatchSuggestion) -> MatchSuggestionResponse:
-    users = await User.find(User.auth0_id.in_(item.participants)).to_list()
+    users = await User.find(In(User.auth0_id, item.participants)).to_list()
     users_by_auth0_id = {user.auth0_id: user for user in users}
 
     participant_profiles = []
@@ -50,6 +51,7 @@ async def _to_response(item: MatchSuggestion) -> MatchSuggestionResponse:
             )
 
     payload = item.model_dump()
+    payload["id"] = str(item.id)
     payload["participants"] = participant_profiles
     payload["participant_auth0_ids"] = item.participants
     return MatchSuggestionResponse.model_validate(payload)

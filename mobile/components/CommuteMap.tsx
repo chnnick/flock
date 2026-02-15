@@ -112,24 +112,26 @@ function generateMapHtml(route: CommuteRoute): string {
       font-size: 11px;
     }
     .marker-label {
-      background: white;
-      border: 2px solid;
-      border-radius: 20px;
-      padding: 4px 10px;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 11px;
-      font-weight: 600;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
       white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      text-shadow:
+        -1px -1px 0 rgba(255,255,255,0.9),
+         1px -1px 0 rgba(255,255,255,0.9),
+        -1px  1px 0 rgba(255,255,255,0.9),
+         1px  1px 0 rgba(255,255,255,0.9);
     }
     .meet-point-label {
-      background: rgba(37, 161, 142, 0.12);
-      border-color: #25A18E;
       color: #25A18E;
     }
     .split-point-label {
-      background: rgba(239, 68, 68, 0.08);
-      border-color: #EF4444;
       color: #EF4444;
     }
     .start-marker {
@@ -347,10 +349,10 @@ function generateMapHtml(route: CommuteRoute): string {
 
         // Meet label
         var meetLabel = L.divIcon({
-          html: '<div class="marker-label meet-point-label">' + overlap.meetPointName + '</div>',
+          html: '<div class="marker-label meet-point-label">Meet point</div>',
           className: '',
           iconSize: [0, 0],
-          iconAnchor: [-18, 14],
+          iconAnchor: [-56, 4],
         });
         L.marker(overlap.meetPoint, { icon: meetLabel, interactive: false }).addTo(map);
 
@@ -371,10 +373,10 @@ function generateMapHtml(route: CommuteRoute): string {
 
         // Split label
         var splitLabel = L.divIcon({
-          html: '<div class="marker-label split-point-label">' + overlap.splitPointName + '</div>',
+          html: '<div class="marker-label split-point-label">Split point</div>',
           className: '',
           iconSize: [0, 0],
-          iconAnchor: [-18, 14],
+          iconAnchor: [-52, 4],
         });
         L.marker(overlap.splitPoint, { icon: splitLabel, interactive: false }).addTo(map);
       });

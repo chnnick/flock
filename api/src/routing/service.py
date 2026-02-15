@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import re
 from typing import Any
 
 from src.config import settings
@@ -16,6 +17,7 @@ class RouteGenerationError(RuntimeError):
 class NormalizedRouteGeometry:
     route_segments: list[dict[str, Any]]
     route_coordinates: list[tuple[float, float]]
+    total_duration_minutes: int | None
 
 
 def _decode_polyline(encoded: str) -> list[tuple[float, float]]:
@@ -64,23 +66,57 @@ def _build_departure_iso(start_minute: int) -> str:
     return departure.isoformat(timespec="minutes")
 
 
+def _duration_minutes(value: Any) -> int | None:
+    if isinstance(value, (int, float)):
+        return max(1, int(round(float(value) / 60)))
+    if isinstance(value, str):
+        trimmed = value.strip().upper()
+        if not trimmed:
+            return None
+        iso_match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", trimmed)
+        if iso_match:
+            hours = int(iso_match.group(1) or 0)
+            minutes = int(iso_match.group(2) or 0)
+            seconds = int(iso_match.group(3) or 0)
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            return max(1, int(round(total_seconds / 60)))
+        numeric = re.fullmatch(r"\d+(?:\.\d+)?", trimmed)
+        if numeric:
+            return max(1, int(round(float(trimmed) / 60)))
+    return None
+
+
 def _normalize_route_response(response_data: dict[str, Any]) -> NormalizedRouteGeometry:
     plan = response_data.get("plan")
     if not isinstance(plan, dict):
         raise RouteGenerationError("OTP response did not include a plan")
 
+    legs = None
     edges = plan.get("edges")
-    if not isinstance(edges, list) or not edges:
-        raise RouteGenerationError("OTP did not return any itinerary")
-
-    first_edge = edges[0] if isinstance(edges[0], dict) else None
-    node = first_edge.get("node") if isinstance(first_edge, dict) else None
-    legs = node.get("legs") if isinstance(node, dict) else None
+    if isinstance(edges, list) and edges:
+        first_edge = edges[0] if isinstance(edges[0], dict) else None
+        node = first_edge.get("node") if isinstance(first_edge, dict) else None
+        candidate_legs = node.get("legs") if isinstance(node, dict) else None
+        if isinstance(candidate_legs, list):
+            legs = candidate_legs
+    itinerary_duration_minutes: int | None = None
+    if legs is None:
+        itineraries = plan.get("itineraries")
+        if isinstance(itineraries, list) and itineraries:
+            first_itinerary = itineraries[0] if isinstance(itineraries[0], dict) else None
+            candidate_legs = first_itinerary.get("legs") if isinstance(first_itinerary, dict) else None
+            if isinstance(candidate_legs, list):
+                legs = candidate_legs
+            itinerary_duration_minutes = _duration_minutes(
+                first_itinerary.get("duration") if isinstance(first_itinerary, dict) else None
+            )
     if not isinstance(legs, list) or not legs:
         raise RouteGenerationError("OTP itinerary did not include legs")
 
     route_segments: list[dict[str, Any]] = []
     route_coordinates: list[tuple[float, float]] = []
+    total_duration_minutes = 0
+    has_duration = False
     for leg in legs:
         if not isinstance(leg, dict):
             continue
@@ -103,6 +139,10 @@ def _normalize_route_response(response_data: dict[str, Any]) -> NormalizedRouteG
             else route_short_name if isinstance(route_short_name, str) and route_short_name else None
         )
         transit_line = route_short_name if segment_type == "transit" else None
+        segment_duration_minutes = _duration_minutes(leg.get("duration"))
+        if segment_duration_minutes is not None:
+            total_duration_minutes += segment_duration_minutes
+            has_duration = True
 
         route_segments.append(
             {
@@ -110,6 +150,7 @@ def _normalize_route_response(response_data: dict[str, Any]) -> NormalizedRouteG
                 "coordinates": coordinates,
                 "label": label,
                 "transit_line": transit_line,
+                "duration_minutes": segment_duration_minutes,
             }
         )
         for coordinate in coordinates:
@@ -122,6 +163,7 @@ def _normalize_route_response(response_data: dict[str, Any]) -> NormalizedRouteG
     return NormalizedRouteGeometry(
         route_segments=route_segments,
         route_coordinates=route_coordinates,
+        total_duration_minutes=total_duration_minutes if has_duration else itinerary_duration_minutes,
     )
 
 

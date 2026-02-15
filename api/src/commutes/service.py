@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from src.commutes.schemas import CommuteCreate, CommuteUpdate
 from src.db.models.commute import Commute
+from src.db.models.match_suggestion import MatchSuggestion
 from src.routing.service import generate_route_for_commute
 
 
@@ -94,6 +95,7 @@ async def create_or_replace_commute(auth0_id: str, payload: CommuteCreate) -> Co
         existing.queue_days_of_week = payload.queue_days_of_week
         existing.route_segments = route_geometry.route_segments
         existing.route_coordinates = route_geometry.route_coordinates
+        existing.otp_total_duration_minutes = route_geometry.total_duration_minutes
         existing.updated_at = datetime.now(timezone.utc)
         await existing.save()
         return existing
@@ -112,6 +114,7 @@ async def create_or_replace_commute(auth0_id: str, payload: CommuteCreate) -> Co
         queue_days_of_week=payload.queue_days_of_week,
         route_segments=route_geometry.route_segments,
         route_coordinates=route_geometry.route_coordinates,
+        otp_total_duration_minutes=route_geometry.total_duration_minutes,
     )
     await commute.insert()
     return commute
@@ -167,6 +170,7 @@ async def patch_my_commute(auth0_id: str, payload: CommuteUpdate) -> Commute | N
         )
         commute.route_segments = route_geometry.route_segments
         commute.route_coordinates = route_geometry.route_coordinates
+        commute.otp_total_duration_minutes = route_geometry.total_duration_minutes
 
     commute.updated_at = datetime.now(timezone.utc)
     await commute.save()
@@ -177,6 +181,17 @@ async def set_queue_enabled(auth0_id: str, enabled: bool) -> Commute | None:
     commute = await get_my_commute(auth0_id)
     if not commute:
         return None
+    if enabled:
+        active_matches = await MatchSuggestion.find(
+            MatchSuggestion.status == "active",
+        ).to_list()
+        has_active_match = any(auth0_id in match.participants for match in active_matches)
+        if has_active_match:
+            commute.enable_queue_flow = False
+            commute.status = "paused"
+            commute.updated_at = datetime.now(timezone.utc)
+            await commute.save()
+            return commute
     commute.enable_queue_flow = enabled
     commute.status = "queued" if enabled else "paused"
     commute.updated_at = datetime.now(timezone.utc)

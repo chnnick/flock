@@ -15,12 +15,14 @@ function isGroupMatch(match: Match): boolean {
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const { matches, commute, acceptMatch, declineMatch, triggerMatching } = useApp();
+  const { matches, commute, acceptMatch, declineMatch, triggerMatching, joinQueue, leaveQueue } = useApp();
   const [loadingMatch, setLoadingMatch] = useState<string | null>(null);
   const [isQueuing, setIsQueuing] = useState(false);
+  const [isLeavingQueue, setIsLeavingQueue] = useState(false);
 
   const pendingMatches = matches.filter(m => m.status === 'pending');
   const activeMatches = matches.filter(m => m.status === 'active');
+  const hasActiveMatch = activeMatches.length > 0;
 
   const handleAccept = async (matchId: string) => {
     setLoadingMatch(matchId);
@@ -40,20 +42,19 @@ export default function MatchesScreen() {
   };
 
   const handleQueue = async () => {
-    if (!commute || pendingMatches.length === 0 || isQueuing) return;
-    const wantGroup = commute.matchPreference === 'group';
-    const matchingPreference = pendingMatches.filter(m => isGroupMatch(m) === wantGroup);
-    const bestMatch = matchingPreference.length > 0
-      ? matchingPreference.reduce((a, b) => a.compositeScore >= b.compositeScore ? a : b)
-      : null;
-    if (!bestMatch) return;
+    if (!commute || isQueuing || hasActiveMatch || commute.status === 'queued') return;
     setIsQueuing(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    await acceptMatch(bestMatch.id);
+    await joinQueue();
     setIsQueuing(false);
-    if (bestMatch.chatRoomId) {
-      router.push({ pathname: '/chat/[id]', params: { id: bestMatch.chatRoomId } });
-    }
+  };
+
+  const handleLeaveQueue = async () => {
+    if (!commute || commute.status !== 'queued' || isLeavingQueue) return;
+    setIsLeavingQueue(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await leaveQueue();
+    setIsLeavingQueue(false);
   };
 
   return (
@@ -88,51 +89,85 @@ export default function MatchesScreen() {
               <Text style={styles.emptyButtonText}>Set Up Commute</Text>
             </Pressable>
           </View>
-        ) : pendingMatches.length === 0 && activeMatches.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}>
-              <Ionicons name="people-outline" size={48} color={Colors.textTertiary} />
-            </View>
-            <Text style={styles.emptyTitle}>No matches yet</Text>
-            <Text style={styles.emptyText}>
-              Tap the search button on the home screen to find commute matches.
-            </Text>
-            <Pressable style={styles.emptyButton} onPress={handleRefresh}>
-              <Text style={styles.emptyButtonText}>Search Now</Text>
-            </Pressable>
-          </View>
         ) : (
           <>
-            {pendingMatches.length > 0 && (
+            {commute && (
               <>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.queueButton,
-                    pressed && styles.queueButtonPressed,
-                    isQueuing && styles.queueButtonDisabled,
-                  ]}
-                  onPress={handleQueue}
-                  disabled={isQueuing}
-                >
-                  {isQueuing ? (
-                    <ActivityIndicator color={Colors.textInverse} size="small" />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name={commute?.matchPreference === 'group' ? 'people' : 'person'}
-                        size={20}
-                        color={Colors.textInverse}
-                      />
+                {commute.status === 'queued' ? (
+                  <>
+                    <View style={styles.queueStatusCard}>
+                      <ActivityIndicator color={Colors.textInverse} size="small" />
                       <Text style={styles.queueButtonText}>
-                        Queue for {commute?.matchPreference === 'group' ? 'Group' : '1:1'}
+                        In Queue for {commute?.matchPreference === 'group' ? 'Group' : '1:1'}
                       </Text>
-                    </>
-                  )}
-                </Pressable>
+                    </View>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.leaveQueueButton,
+                        pressed && { opacity: 0.9 },
+                        isLeavingQueue && styles.queueButtonDisabled,
+                      ]}
+                      onPress={handleLeaveQueue}
+                      disabled={isLeavingQueue}
+                    >
+                      {isLeavingQueue ? (
+                        <ActivityIndicator color={Colors.text} size="small" />
+                      ) : (
+                        <>
+                          <Ionicons name="close-circle-outline" size={18} color={Colors.text} />
+                          <Text style={styles.leaveQueueText}>Leave Queue</Text>
+                        </>
+                      )}
+                    </Pressable>
+                  </>
+                ) : (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.queueButton,
+                      pressed && styles.queueButtonPressed,
+                      (isQueuing || hasActiveMatch) && styles.queueButtonDisabled,
+                    ]}
+                    onPress={handleQueue}
+                    disabled={isQueuing || hasActiveMatch}
+                  >
+                    {isQueuing ? (
+                      <ActivityIndicator color={Colors.textInverse} size="small" />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={commute?.matchPreference === 'group' ? 'people' : 'person'}
+                          size={20}
+                          color={Colors.textInverse}
+                        />
+                        <Text style={styles.queueButtonText}>
+                          Join Queue for {commute?.matchPreference === 'group' ? 'Group' : '1:1'}
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                )}
                 <Text style={styles.queueHint}>
-                  Auto-match and join, or browse below
+                  {hasActiveMatch
+                    ? 'Queue is closed while you have an active queue match.'
+                    : commute.status === 'queued'
+                    ? "We'll let you know if you have a match soon."
+                    : 'Join queue to get auto-matched when a compatible rider is available.'}
                 </Text>
               </>
+            )}
+            {pendingMatches.length === 0 && activeMatches.length === 0 && (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIcon}>
+                  <Ionicons name="people-outline" size={48} color={Colors.textTertiary} />
+                </View>
+                <Text style={styles.emptyTitle}>No matches yet</Text>
+                <Text style={styles.emptyText}>
+                  Tap the search button on the home screen to find commute matches.
+                </Text>
+                <Pressable style={styles.emptyButton} onPress={handleRefresh}>
+                  <Text style={styles.emptyButtonText}>Search Now</Text>
+                </Pressable>
+              </View>
             )}
             {pendingMatches.length > 0 && (
               <View style={styles.section}>
@@ -477,6 +512,33 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontFamily: 'Outfit_600SemiBold',
     color: Colors.textInverse,
+  },
+  queueStatusCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.secondary,
+    borderRadius: 16,
+    paddingVertical: 16,
+    marginBottom: 8,
+  },
+  leaveQueueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 8,
+  },
+  leaveQueueText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.text,
   },
   queueHint: {
     fontSize: 13,

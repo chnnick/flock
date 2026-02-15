@@ -7,6 +7,6 @@ algorithm:
   shared_meters_per_minute: 80.0
 
 service:
-  pass_cooldown_days: 7
+  pass_cooldown_days: 0 # Normally 7 days, 0 for demo
   queue_assignment_days_ahead: 1
 

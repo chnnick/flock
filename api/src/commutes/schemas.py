@@ -27,6 +27,7 @@ class RouteSegmentPayload(BaseModel):
     coordinates: list[tuple[float, float]]
     label: str | None = None
     transit_line: str | None = None
+    duration_minutes: int | None = None
 
 
 class CommuteCreate(BaseModel):
@@ -71,6 +72,7 @@ class CommuteResponse(BaseModel):
     queue_days_of_week: list[int]
     route_segments: list[RouteSegmentPayload]
     route_coordinates: list[tuple[float, float]]
+    otp_total_duration_minutes: int | None = None
     created_at: datetime
     updated_at: datetime
 

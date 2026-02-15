@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -19,7 +20,7 @@ def _mode_block(transport_mode: str) -> str:
     )
 
 
-def _build_plan_query(
+def _build_plan_query_v2(
     *,
     from_lat: float,
     from_lng: float,
@@ -47,9 +48,56 @@ def _build_plan_query(
       node {{
         legs {{
           mode
+          duration
           route {{ longName shortName }}
           legGeometry {{ points }}
         }}
+      }}
+    }}
+  }}
+}}
+""".strip()
+
+
+def _build_transport_modes_block(transport_mode: str) -> str:
+    if transport_mode == "walk":
+        return "{ mode: WALK }"
+    return "{ mode: WALK }, { mode: TRANSIT }"
+
+
+def _departure_iso_to_legacy_fields(departure_iso: str) -> tuple[str, str]:
+    parsed = datetime.fromisoformat(departure_iso)
+    return parsed.strftime("%Y-%m-%d"), parsed.strftime("%I:%M%p").lower()
+
+
+def _build_plan_query_v1(
+    *,
+    from_lat: float,
+    from_lng: float,
+    to_lat: float,
+    to_lng: float,
+    departure_iso: str,
+    transport_mode: str,
+) -> str:
+    date, time = _departure_iso_to_legacy_fields(departure_iso)
+    transport_modes = _build_transport_modes_block(transport_mode)
+    return f"""
+{{
+  plan(
+    from: {{ lat: {from_lat}, lon: {from_lng} }}
+    to: {{ lat: {to_lat}, lon: {to_lng} }}
+    date: "{date}"
+    time: "{time}"
+    numItineraries: 1
+    transportModes: [{transport_modes}]
+  ) {{
+    itineraries {{
+      duration
+      legs {{
+        mode
+        duration
+        route {{ longName shortName }}
+        legGeometry {{ points }}
       }}
     }}
   }}
@@ -74,8 +122,8 @@ class OtpClient:
         departure_iso: str,
         transport_mode: str,
     ) -> dict:
-        payload = {
-            "query": _build_plan_query(
+        payload_v2 = {
+            "query": _build_plan_query_v2(
                 from_lat=from_lat,
                 from_lng=from_lng,
                 to_lat=to_lat,
@@ -84,9 +132,22 @@ class OtpClient:
                 transport_mode=transport_mode,
             )
         }
-        response_json = await asyncio.to_thread(self._post_graphql, payload)
+        response_json = await asyncio.to_thread(self._post_graphql, payload_v2)
         if response_json.get("errors"):
-            raise OtpClientError(f"OTP returned errors: {response_json['errors']}")
+            payload_v1 = {
+                "query": _build_plan_query_v1(
+                    from_lat=from_lat,
+                    from_lng=from_lng,
+                    to_lat=to_lat,
+                    to_lng=to_lng,
+                    departure_iso=departure_iso,
+                    transport_mode=transport_mode,
+                )
+            }
+            fallback_json = await asyncio.to_thread(self._post_graphql, payload_v1)
+            if fallback_json.get("errors"):
+                raise OtpClientError(f"OTP returned errors: {fallback_json['errors']}")
+            response_json = fallback_json
         data = response_json.get("data")
         if not isinstance(data, dict):
             raise OtpClientError("OTP returned an invalid GraphQL response")

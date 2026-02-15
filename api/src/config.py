@@ -10,12 +10,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(API_DIR / ".env", REPO_ROOT / ".env"),
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
-    AUTH0_DOMAIN: str
-    AUTH0_AUDIENCE: str
+    AUTH0_DOMAIN: str | None = None
+    AUTH0_AUDIENCE: str | None = None
     MONGO_URI: str
     GEMINI_API_KEY: str
+    DEV_AUTH_BYPASS: bool = False
+    DEV_AUTH_DEFAULT_USER_ID: str = "auth0|demo_you"
     OTP_BASE_URL: str | None = None
     OTP_GRAPHQL_PATH: str = "/otp/routers/default/index/graphql"
     OTP_TIMEOUT_SECONDS: float = 15.0

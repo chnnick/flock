@@ -1,17 +1,30 @@
 import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import Constants from "expo-constants";
+
+function getPublicEnvVar(name: string): string | undefined {
+  const valueFromProcess = process.env[name];
+  if (valueFromProcess) {
+    return valueFromProcess;
+  }
+
+  const valueFromExpoConfig = Constants.expoConfig?.extra?.[name];
+  return typeof valueFromExpoConfig === "string" && valueFromExpoConfig
+    ? valueFromExpoConfig
+    : undefined;
+}
 
 /**
  * Gets the base URL for the FastAPI backend (e.g., "http://localhost:8000")
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
-  const explicitBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+  const explicitBaseUrl = getPublicEnvVar("EXPO_PUBLIC_API_BASE_URL");
   if (explicitBaseUrl) {
     return explicitBaseUrl.endsWith("/") ? explicitBaseUrl : `${explicitBaseUrl}/`;
   }
 
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
+  let host = getPublicEnvVar("EXPO_PUBLIC_DOMAIN");
 
   if (!host) {
     throw new Error("Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_DOMAIN");
@@ -23,11 +36,16 @@ export function getApiUrl(): string {
 }
 
 function getAuthHeader(): Record<string, string> {
-  const token = process.env.EXPO_PUBLIC_API_TOKEN;
-  if (!token) {
-    return {};
+  const token = getPublicEnvVar("EXPO_PUBLIC_API_TOKEN");
+  const devAuth0Id = getPublicEnvVar("EXPO_PUBLIC_DEV_AUTH0_ID");
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
   }
-  return { Authorization: `Bearer ${token}` };
+  if (devAuth0Id) {
+    headers["x-dev-auth0-id"] = devAuth0Id;
+  }
+  return headers;
 }
 
 async function throwIfResNotOk(res: Response) {

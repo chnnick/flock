@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Platform, StyleSheet, useColorScheme, View } from 'react-native';
 import React from 'react';
 import Colors from '@/constants/colors';
+import { useApp } from '@/contexts/AppContext';
 
 function NativeTabLayout() {
   return (
@@ -34,6 +35,8 @@ function ClassicTabLayout() {
   const isDark = colorScheme === 'dark';
   const isWeb = Platform.OS === 'web';
   const isIOS = Platform.OS === 'ios';
+  const { matches } = useApp();
+  const pendingMatchCount = matches.filter((match) => match.status === 'pending').length;
 
   return (
     <Tabs
@@ -74,6 +77,13 @@ function ClassicTabLayout() {
         name="matches"
         options={{
           title: 'Matches',
+          tabBarBadge: pendingMatchCount > 0 ? pendingMatchCount : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: Colors.primary,
+            color: Colors.textInverse,
+            fontFamily: 'Outfit_600SemiBold',
+            fontSize: 11,
+          },
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'people' : 'people-outline'} size={24} color={color} />
           ),

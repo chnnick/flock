@@ -29,10 +29,16 @@ app = FastAPI(title="Flock API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production (e.g. EXPO_PUBLIC_DOMAIN origins)
+    # Wildcard origins do not work with credentials in browsers.
+    allow_origins=[
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:19006",
+        "http://127.0.0.1:19006",
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "x-dev-auth0-id"],
 )
 
 app.include_router(users_router, prefix="/api", tags=["users"])

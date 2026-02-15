@@ -8,6 +8,92 @@ import { useApp } from '@/contexts/AppContext';
 import { CommuteRoute } from '@/constants/sampleRoutes';
 import CommuteMap from '@/components/CommuteMap';
 
+function displayToMinute(value: string): number {
+  const trimmed = value.trim().toUpperCase();
+  const match = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
+  if (!match) {
+    return 0;
+  }
+  const rawHours = Number(match[1]);
+  const mins = Number(match[2] ?? 0);
+  const ampm = match[3];
+  let hours = rawHours % 12;
+  if (ampm === 'PM') {
+    hours += 12;
+  }
+  return Math.max(0, Math.min(1439, hours * 60 + mins));
+}
+
+function minutesBetween(start: string, end: string): number {
+  const startMinute = displayToMinute(start);
+  const endMinute = displayToMinute(end);
+  const delta = (endMinute - startMinute + 1440) % 1440;
+  return delta === 0 ? 1 : delta;
+}
+
+function haversineMeters(a: [number, number], b: [number, number]): number {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const earthRadius = 6371000;
+  const dLat = toRad(b[0] - a[0]);
+  const dLng = toRad(b[1] - a[1]);
+  const lat1 = toRad(a[0]);
+  const lat2 = toRad(b[0]);
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+  return 2 * earthRadius * Math.asin(Math.sqrt(h));
+}
+
+function segmentLengthMeters(coordinates: [number, number][]): number {
+  let total = 0;
+  for (let i = 1; i < coordinates.length; i += 1) {
+    total += haversineMeters(coordinates[i - 1], coordinates[i]);
+  }
+  return total;
+}
+
+function toDurationLabel(minutes: number): string {
+  return `${Math.max(0, Math.round(minutes))} min`;
+}
+
+function flattenCoordinates(route: CommuteRoute): [number, number][] {
+  return route.segments.flatMap((segment) => segment.coordinates);
+}
+
+function nearestIndex(coords: [number, number][], target: [number, number]): number {
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < coords.length; i += 1) {
+    const [lat, lng] = coords[i];
+    const dLat = lat - target[0];
+    const dLng = lng - target[1];
+    const distanceSquared = dLat * dLat + dLng * dLng;
+    if (distanceSquared < bestDistance) {
+      bestDistance = distanceSquared;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+function overlapCoordinatesFromRoute(
+  routeCoords: [number, number][],
+  meetPoint: [number, number],
+  splitPoint: [number, number],
+): [number, number][] {
+  if (routeCoords.length < 2) {
+    return [meetPoint, splitPoint];
+  }
+  const startIdx = nearestIndex(routeCoords, meetPoint);
+  const endIdx = nearestIndex(routeCoords, splitPoint);
+  const [from, to] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+  const sliced = routeCoords.slice(from, to + 1);
+  if (sliced.length < 2) {
+    return [meetPoint, splitPoint];
+  }
+  return [meetPoint, ...sliced, splitPoint];
+}
+
 export default function CommuteDetailScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -31,27 +117,84 @@ export default function CommuteDetailScreen() {
     );
   }
 
-  const activeMatches = matches.filter(m => m.status === 'active' || m.status === 'pending');
-  const routeData: CommuteRoute = {
-    id: commute.id,
-    segments: commute.routeSegments.length > 0 ? commute.routeSegments : [{
+  const activeMatches = matches.filter(m => m.status === 'active');
+  const baseSegments = commute.routeSegments.length > 0
+    ? commute.routeSegments
+    : [{
       type: commute.transportMode,
       coordinates: [commute.startLocation, commute.endLocation].map((point) => [point.lat, point.lng] as [number, number]),
       label: `${commute.startLocation.name} to ${commute.endLocation.name}`,
-    }],
+    }];
+  const routeCoords = flattenCoordinates({
+    id: commute.id,
+    segments: baseSegments,
     startName: commute.startLocation.name,
     endName: commute.endLocation.name,
     totalDuration: 'N/A',
-    walkDuration: commute.transportMode === 'walk' ? 'N/A' : '0 min',
-    transitDuration: commute.transportMode === 'transit' ? 'N/A' : '0 min',
+    walkDuration: 'N/A',
+    transitDuration: 'N/A',
+    matchOverlaps: [],
+  });
+  const otpDurationByType = baseSegments.reduce(
+    (acc, segment) => {
+      if (typeof segment.durationMinutes !== 'number') {
+        return acc;
+      }
+      acc.total += segment.durationMinutes;
+      acc.knownCount += 1;
+      if (segment.type === 'walk') {
+        acc.walk += segment.durationMinutes;
+      } else {
+        acc.transit += segment.durationMinutes;
+      }
+      return acc;
+    },
+    { total: 0, walk: 0, transit: 0, knownCount: 0 },
+  );
+  const totalMinutes = commute.otpTotalDurationMinutes
+    ?? (otpDurationByType.knownCount > 0
+      ? otpDurationByType.total
+      : minutesBetween(commute.earliestDeparture, commute.latestArrival));
+  const lengthsByType = baseSegments.reduce(
+    (acc, segment) => {
+      const length = segmentLengthMeters(segment.coordinates);
+      acc.total += length;
+      if (segment.type === 'walk') {
+        acc.walk += length;
+      } else {
+        acc.transit += length;
+      }
+      return acc;
+    },
+    { total: 0, walk: 0, transit: 0 },
+  );
+  const walkMinutes = otpDurationByType.knownCount > 0
+    ? otpDurationByType.walk
+    : lengthsByType.total > 0
+      ? (totalMinutes * lengthsByType.walk) / lengthsByType.total
+      : commute.transportMode === 'walk' ? totalMinutes : 0;
+  const transitMinutes = otpDurationByType.knownCount > 0
+    ? otpDurationByType.transit
+    : lengthsByType.total > 0
+      ? (totalMinutes * lengthsByType.transit) / lengthsByType.total
+      : commute.transportMode === 'transit' ? totalMinutes : 0;
+  const routeData: CommuteRoute = {
+    id: commute.id,
+    segments: baseSegments,
+    startName: commute.startLocation.name,
+    endName: commute.endLocation.name,
+    totalDuration: toDurationLabel(totalMinutes),
+    walkDuration: toDurationLabel(walkMinutes),
+    transitDuration: toDurationLabel(transitMinutes),
     matchOverlaps: activeMatches.map((match) => {
       const participant = match.participants[0];
       const meetPoint: [number, number] = [match.sharedSegmentStart.lat, match.sharedSegmentStart.lng];
       const splitPoint: [number, number] = [match.sharedSegmentEnd.lat, match.sharedSegmentEnd.lng];
+      const overlapCoords = overlapCoordinatesFromRoute(routeCoords, meetPoint, splitPoint);
       return {
         matchName: participant?.name ?? 'Commuter',
         matchAvatar: participant?.avatar ?? Colors.primary,
-        coordinates: [meetPoint, splitPoint],
+        coordinates: overlapCoords,
         meetPoint,
         splitPoint,
         meetPointName: match.sharedSegmentStart.name,

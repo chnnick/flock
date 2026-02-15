@@ -49,6 +49,7 @@ export interface ApiRouteSegment {
   coordinates: [number, number][];
   label?: string | null;
   transit_line?: string | null;
+  duration_minutes?: number | null;
 }
 
 export interface ApiCommuteResponse {
@@ -67,6 +68,7 @@ export interface ApiCommuteResponse {
   queue_days_of_week: number[];
   route_segments: ApiRouteSegment[];
   route_coordinates: [number, number][];
+  otp_total_duration_minutes?: number | null;
   created_at: string;
   updated_at: string;
 }

@@ -11,7 +11,7 @@
     "lint": "npx expo lint",
     "lint:fix": "expo lint --fix",
     "android": "expo run:android",
-    "ios": "npx expo run:ios"
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@expo-google-fonts/outfit": "^0.4.3",

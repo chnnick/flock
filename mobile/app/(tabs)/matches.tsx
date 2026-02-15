@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp, Match } from '@/contexts/AppContext';
+import Avatar from '@/components/Avatar';
 import { useState } from 'react';
 
 function isGroupMatch(match: Match): boolean {
@@ -191,9 +192,7 @@ function MatchCard({ match, index, onAccept, onDecline, isLoading }: {
     <Animated.View entering={FadeInDown.delay(index * 100).duration(500)}>
       <View style={styles.matchCard}>
         <View style={styles.matchCardHeader}>
-          <View style={[styles.avatar, { backgroundColor: person.avatar }]}>
-            <Text style={styles.avatarText}>{person.name[0]}</Text>
-          </View>
+          <Avatar uri={person.avatar} name={person.name} size={52} />
           <View style={styles.matchCardInfo}>
             <Text style={styles.matchName}>{person.name}</Text>
             <Text style={styles.matchOccupation}>{person.occupation}</Text>
@@ -298,11 +297,11 @@ function GroupMatchCard({ match, index, onAccept, onDecline, isLoading }: {
               <View
                 key={p.id}
                 style={[
-                  styles.groupAvatar,
-                  { backgroundColor: p.avatar, marginLeft: i > 0 ? -10 : 0, zIndex: match.participants.length - i },
+                  styles.groupAvatarContainer,
+                  { marginLeft: i > 0 ? -12 : 0, zIndex: match.participants.length - i },
                 ]}
               >
-                <Text style={styles.groupAvatarText}>{p.name[0]}</Text>
+                <Avatar uri={p.avatar} name={p.name} size={40} />
               </View>
             ))}
           </View>
@@ -386,11 +385,11 @@ function ActiveMatchCard({ match, index, isGroup }: { match: Match; index: numbe
                 <View
                   key={p.id}
                   style={[
-                    styles.activeGroupAvatar,
-                    { backgroundColor: p.avatar, marginLeft: i > 0 ? -8 : 0, zIndex: 4 - i },
+                    styles.activeGroupAvatarContainer,
+                    { marginLeft: i > 0 ? -12 : 0, zIndex: 4 - i },
                   ]}
                 >
-                  <Text style={styles.activeGroupAvatarText}>{p.name[0]}</Text>
+                  <Avatar uri={p.avatar} name={p.name} size={36} />
                 </View>
               ))}
             </View>
@@ -407,9 +406,7 @@ function ActiveMatchCard({ match, index, isGroup }: { match: Match; index: numbe
           </>
         ) : (
           <>
-            <View style={[styles.avatar, { backgroundColor: person.avatar, width: 44, height: 44 }]}>
-              <Text style={[styles.avatarText, { fontSize: 18 }]}>{person.name[0]}</Text>
-            </View>
+            <Avatar uri={person.avatar} name={person.name} size={44} />
             <View style={styles.activeInfo}>
               <Text style={styles.activeName}>{person.name}</Text>
               <Text style={styles.activeRoute}>
@@ -541,37 +538,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  groupAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+  groupAvatarContainer: {
     borderWidth: 2,
     borderColor: Colors.card,
-  },
-  groupAvatarText: {
-    fontSize: 16,
-    fontFamily: 'Outfit_700Bold',
-    color: Colors.textInverse,
+    borderRadius: 14,
   },
   groupParticipantNames: {
     flex: 1,
     fontSize: 15,
     fontFamily: 'Outfit_600SemiBold',
     color: Colors.text,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 22,
-    fontFamily: 'Outfit_700Bold',
-    color: Colors.textInverse,
   },
   matchCardInfo: {
     flex: 1,
@@ -711,19 +687,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  activeGroupAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+  activeGroupAvatarContainer: {
     borderWidth: 2,
     borderColor: Colors.card,
-  },
-  activeGroupAvatarText: {
-    fontSize: 14,
-    fontFamily: 'Outfit_700Bold',
-    color: Colors.textInverse,
+    borderRadius: 12,
   },
   activeCapacity: {
     fontSize: 11,

@@ -1,13 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming
+} from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import Avatar from '@/components/Avatar';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -16,6 +24,23 @@ export default function HomeScreen() {
   const [showHowFlockWorks, setShowHowFlockWorks] = useState(false);
   const activeMatches = matches.filter(m => m.status === 'active');
   const pendingMatches = matches.filter(m => m.status === 'pending');
+
+  const pulse = useSharedValue(1);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1.02, { duration: 1500 }),
+        withTiming(1, { duration: 1500 })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.value }],
+  }));
 
   const handleFindMatches = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -51,70 +76,72 @@ export default function HomeScreen() {
         {commute ? (
           <Animated.View entering={FadeInDown.duration(500)}>
             <Pressable onPress={() => router.push('/commute-detail')} style={({ pressed }) => [pressed && { opacity: 0.95, transform: [{ scale: 0.98 }] }]}>
-            <LinearGradient
-              colors={[Colors.secondary, '#006A8A']}
-              style={styles.commuteCard}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={styles.commuteHeader}>
-                <View style={styles.modeTag}>
-                  <Ionicons
-                    name={commute.transportMode === 'walk' ? 'walk' : 'train'}
-                    size={16}
-                    color={Colors.secondary}
-                  />
-                  <Text style={styles.modeTagText}>
-                    {commute.transportMode === 'walk' ? 'Walking' : 'Transit'}
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() => router.push('/commute-setup')}
-                  hitSlop={8}
+              <Animated.View style={pulseStyle}>
+                <LinearGradient
+                  colors={['#FF7A00', '#FFB700']} // Vibrant Orange to Yellow
+                  style={styles.commuteCard}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                 >
-                  <Ionicons name="create-outline" size={22} color="rgba(255,255,255,0.8)" />
-                </Pressable>
-              </View>
-
-              <View style={styles.routeDisplay}>
-                <View style={styles.routePoint}>
-                  <View style={styles.routeDotStart} />
-                  <View style={styles.routeInfo}>
-                    <Text style={styles.routeLabel}>From</Text>
-                    <Text style={styles.routeName}>{commute.startLocation.name}</Text>
+                  <View style={styles.commuteHeader}>
+                    <View style={styles.modeTag}>
+                      <Ionicons
+                        name={commute.transportMode === 'walk' ? 'walk' : 'train'}
+                        size={16}
+                        color={Colors.secondary}
+                      />
+                      <Text style={styles.modeTagText}>
+                        {commute.transportMode === 'walk' ? 'Walking' : 'Transit'}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => router.push('/commute-setup')}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="create-outline" size={22} color="rgba(255,255,255,0.8)" />
+                    </Pressable>
                   </View>
-                </View>
-                <View style={styles.routeLine} />
-                <View style={styles.routePoint}>
-                  <View style={styles.routeDotEnd} />
-                  <View style={styles.routeInfo}>
-                    <Text style={styles.routeLabel}>To</Text>
-                    <Text style={styles.routeName}>{commute.endLocation.name}</Text>
+
+                  <View style={styles.routeDisplay}>
+                    <View style={styles.routePoint}>
+                      <View style={styles.routeDotStart} />
+                      <View style={styles.routeInfo}>
+                        <Text style={styles.routeLabel}>From</Text>
+                        <Text style={styles.routeName}>{commute.startLocation.name}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.routeLine} />
+                    <View style={styles.routePoint}>
+                      <View style={styles.routeDotEnd} />
+                      <View style={styles.routeInfo}>
+                        <Text style={styles.routeLabel}>To</Text>
+                        <Text style={styles.routeName}>{commute.endLocation.name}</Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
-              </View>
 
-              <View style={styles.timeRow}>
-                <View style={styles.timeItem}>
-                  <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.7)" />
-                  <Text style={styles.timeText}>
-                    {commute.earliestDeparture} - {commute.latestArrival}
-                  </Text>
-                </View>
-                <View style={styles.timeItem}>
-                  <Ionicons name="people-outline" size={16} color="rgba(255,255,255,0.7)" />
-                  <Text style={styles.timeText}>
-                    {commute.matchPreference === 'group' ? 'Group' : 'Individual'}
-                  </Text>
-                </View>
-              </View>
+                  <View style={styles.timeRow}>
+                    <View style={styles.timeItem}>
+                      <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.7)" />
+                      <Text style={styles.timeText}>
+                        {commute.earliestDeparture} - {commute.latestArrival}
+                      </Text>
+                    </View>
+                    <View style={styles.timeItem}>
+                      <Ionicons name="people-outline" size={16} color="rgba(255,255,255,0.7)" />
+                      <Text style={styles.timeText}>
+                        {commute.matchPreference === 'group' ? 'Group' : 'Individual'}
+                      </Text>
+                    </View>
+                  </View>
 
-              <View style={styles.viewMapRow}>
-                <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.viewMapText}>Tap to view route map</Text>
-                <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.4)" />
-              </View>
-            </LinearGradient>
+                  <View style={styles.viewMapRow}>
+                    <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.6)" />
+                    <Text style={styles.viewMapText}>Tap to view route map</Text>
+                    <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.4)" />
+                  </View>
+                </LinearGradient>
+              </Animated.View>
             </Pressable>
 
             <Pressable
@@ -159,9 +186,9 @@ export default function HomeScreen() {
                 onPress={() => router.push({ pathname: '/chat/[id]', params: { id: match.chatRoomId } })}
               >
                 <View style={styles.matchAvatarRow}>
-                  {match.participants.map(p => (
-                    <View key={p.id} style={[styles.miniAvatar, { backgroundColor: p.avatar }]}>
-                      <Text style={styles.miniAvatarText}>{p.name[0]}</Text>
+                  {match.participants.map((p, i) => (
+                    <View key={p.id} style={[styles.miniAvatarContainer, { marginLeft: i > 0 ? -12 : 0, zIndex: 4 - i }]}>
+                      <Avatar uri={p.avatar} name={p.name} size={36} />
                     </View>
                   ))}
                 </View>
@@ -532,20 +559,10 @@ const styles = StyleSheet.create({
   matchAvatarRow: {
     flexDirection: 'row',
   },
-  miniAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: -8,
+  miniAvatarContainer: {
     borderWidth: 2,
     borderColor: Colors.card,
-  },
-  miniAvatarText: {
-    fontSize: 14,
-    fontFamily: 'Outfit_600SemiBold',
-    color: Colors.textInverse,
+    borderRadius: 18,
   },
   matchInfo: {
     flex: 1,

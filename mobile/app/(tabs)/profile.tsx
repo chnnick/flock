@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,7 +48,17 @@ export default function ProfileScreen() {
       >
         <View style={styles.profileHeader}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarLargeText}>{user?.name?.[0] || '?'}</Text>
+            {user?.avatar ? (
+              <Image
+                source={{ uri: user.avatar }}
+                style={styles.avatarImage}
+                contentFit="cover"
+                transition={200}
+                onError={(e) => console.log('Profile Avatar Load Error:', e.error)}
+              />
+            ) : (
+              <Text style={styles.avatarLargeText}>{user?.name?.[0] || '?'}</Text>
+            )}
           </View>
           <Text style={styles.profileName}>{user?.name || 'Unknown'}</Text>
           <Text style={styles.profileOccupation}>{user?.occupation || ''}</Text>
@@ -201,6 +212,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarLargeText: {
     fontSize: 36,

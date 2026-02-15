@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import AvatarSelector from '@/components/AvatarSelector';
 
 const GENDERS = [
   { value: 'male', label: 'Male' },
@@ -21,6 +22,7 @@ export default function EditProfileScreen() {
   const [name, setName] = useState('');
   const [occupation, setOccupation] = useState('');
   const [gender, setGender] = useState<string>('');
+  const [avatar, setAvatar] = useState<string | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function EditProfileScreen() {
       setName(user.name || '');
       setOccupation(user.occupation || '');
       setGender(user.gender || '');
+      setAvatar(user.avatar);
     }
   }, [user]);
 
@@ -43,6 +46,7 @@ export default function EditProfileScreen() {
       name: name.trim(),
       occupation: occupation.trim(),
       gender: gender as (typeof user)['gender'],
+      avatar,
     });
     router.back();
     setIsSaving(false);
@@ -79,6 +83,11 @@ export default function EditProfileScreen() {
         <Text style={styles.subtitle}>
           Update your profile information.
         </Text>
+
+        <AvatarSelector
+          currentAvatar={avatar}
+          onSelectAvatar={setAvatar}
+        />
 
         <View style={styles.field}>
           <Text style={styles.label}>Full Name</Text>

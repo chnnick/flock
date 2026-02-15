@@ -9,6 +9,7 @@ export interface UserProfile {
   gender: 'male' | 'female' | 'non-binary' | 'prefer-not-to-say';
   interests: string[];
   commuteFriends: string[];
+  avatar?: string;
   createdAt: string;
 }
 
@@ -149,6 +150,8 @@ function generateMatchProfiles(count: number, userGender?: string): MatchProfile
   return Array.from({ length: count }, (_, i) => {
     const baseName = shuffledNames[i % SAMPLE_NAMES.length];
     const name = i >= SAMPLE_NAMES.length ? `${baseName.split(' ')[0]} ${Math.floor(i / SAMPLE_NAMES.length) + 1}` : baseName;
+    const seed = Math.random().toString(36).substring(7);
+    const style = pickRandom(['avataaars', 'bottts', 'fun-emoji', 'micah', 'notionists'], 1)[0];
 
     return {
       id: Crypto.randomUUID(),
@@ -156,7 +159,7 @@ function generateMatchProfiles(count: number, userGender?: string): MatchProfile
       occupation: SAMPLE_OCCUPATIONS[Math.floor(Math.random() * SAMPLE_OCCUPATIONS.length)],
       gender: genders[Math.floor(Math.random() * genders.length)],
       interests: pickRandom(SAMPLE_INTERESTS, 3 + Math.floor(Math.random() * 4)),
-      avatar: avatarColors[Math.floor(Math.random() * avatarColors.length)],
+      avatar: `https://api.dicebear.com/9.x/${style}/png?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`,
     };
   });
 }

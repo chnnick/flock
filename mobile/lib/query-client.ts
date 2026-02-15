@@ -50,8 +50,9 @@ export function getApiUrl(): string {
   return url.href;
 }
 
+// TODO: REMOVE WHEN IN PRODUCTION!!!
 /** Only used when EXPO_PUBLIC_DEV_AUTH0_ID is set (e.g. local dev). Backend can use it to impersonate that user. Leave unset in production. */
-function getAuthHeaderSync(): Record<string, string> {
+function getAuthHeader(): Record<string, string> {
   const devAuth0Id = getPublicEnvVar("EXPO_PUBLIC_DEV_AUTH0_ID");
   const headers: Record<string, string> = {};
   if (devAuth0Id) {
@@ -83,7 +84,7 @@ export async function apiRequest(
     method,
     headers: {
       ...(data ? { "Content-Type": "application/json" } : {}),
-      ...getAuthHeaderSync(),
+      ...getAuthHeader(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: data ? JSON.stringify(data) : undefined,
@@ -108,7 +109,7 @@ export const getQueryFn: <T>(options: {
 
     const res = await fetch(url.toString(), {
       headers: {
-        ...getAuthHeaderSync(),
+        ...getAuthHeader(),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       credentials: "include",

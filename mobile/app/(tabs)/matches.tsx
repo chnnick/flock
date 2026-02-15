@@ -5,17 +5,27 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
-import { useApp, Match } from '@/contexts/AppContext';
+import { useApp, Match, Commute } from '@/contexts/AppContext';
 import { useState } from 'react';
 
 function isGroupMatch(match: Match): boolean {
   return match.participants.length > 1 || (match.maxCapacity != null && match.maxCapacity > 1);
 }
 
+function queueLabelForPreference(preference: Commute['matchPreference']): string {
+  if (preference === 'group') return 'Group';
+  if (preference === 'both') return '1:1 + Group';
+  return '1:1';
+}
+
+function queueIconForPreference(preference: Commute['matchPreference']): 'person' | 'people' {
+  return preference === 'individual' ? 'person' : 'people';
+}
+
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const { matches, commute, acceptMatch, declineMatch, triggerMatching, joinQueue, leaveQueue } = useApp();
+  const { matches, commute, acceptMatch, declineMatch, refreshMatches, joinQueue, leaveQueue } = useApp();
   const [loadingMatch, setLoadingMatch] = useState<string | null>(null);
   const [isQueuing, setIsQueuing] = useState(false);
   const [isLeavingQueue, setIsLeavingQueue] = useState(false);
@@ -23,6 +33,8 @@ export default function MatchesScreen() {
   const pendingMatches = matches.filter(m => m.status === 'pending');
   const activeMatches = matches.filter(m => m.status === 'active');
   const hasActiveMatch = activeMatches.length > 0;
+  const queueLabel = commute ? queueLabelForPreference(commute.matchPreference) : '1:1';
+  const queueIcon = commute ? queueIconForPreference(commute.matchPreference) : 'person';
 
   const handleAccept = async (matchId: string) => {
     setLoadingMatch(matchId);
@@ -38,7 +50,7 @@ export default function MatchesScreen() {
 
   const handleRefresh = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await triggerMatching();
+    await refreshMatches();
   };
 
   const handleQueue = async () => {
@@ -98,7 +110,7 @@ export default function MatchesScreen() {
                     <View style={styles.queueStatusCard}>
                       <ActivityIndicator color={Colors.textInverse} size="small" />
                       <Text style={styles.queueButtonText}>
-                        In Queue for {commute?.matchPreference === 'group' ? 'Group' : '1:1'}
+                        In Queue for {queueLabel}
                       </Text>
                     </View>
                     <Pressable
@@ -135,12 +147,12 @@ export default function MatchesScreen() {
                     ) : (
                       <>
                         <Ionicons
-                          name={commute?.matchPreference === 'group' ? 'people' : 'person'}
+                          name={queueIcon}
                           size={20}
                           color={Colors.textInverse}
                         />
                         <Text style={styles.queueButtonText}>
-                          Join Queue for {commute?.matchPreference === 'group' ? 'Group' : '1:1'}
+                          Join Queue for {queueLabel}
                         </Text>
                       </>
                     )}
@@ -162,10 +174,10 @@ export default function MatchesScreen() {
                 </View>
                 <Text style={styles.emptyTitle}>No matches yet</Text>
                 <Text style={styles.emptyText}>
-                  Tap the search button on the home screen to find commute matches.
+                  Use Find Matches on Home to run matching.
                 </Text>
                 <Pressable style={styles.emptyButton} onPress={handleRefresh}>
-                  <Text style={styles.emptyButtonText}>Search Now</Text>
+                  <Text style={styles.emptyButtonText}>Refresh</Text>
                 </Pressable>
               </View>
             )}
@@ -222,7 +234,7 @@ function MatchCard({ match, index, onAccept, onDecline, isLoading }: {
   match: Match; index: number; onAccept: () => void; onDecline: () => void; isLoading: boolean;
 }) {
   const person = match.participants[0];
-  const overlapPct = Math.round(match.overlapScore * 100);
+  const compatibilityPct = match.compatibilityPercent;
 
   return (
     <Animated.View entering={FadeInDown.delay(index * 100).duration(500)}>
@@ -236,8 +248,8 @@ function MatchCard({ match, index, onAccept, onDecline, isLoading }: {
             <Text style={styles.matchOccupation}>{person.occupation}</Text>
           </View>
           <View style={styles.scoreContainer}>
-            <Text style={styles.scoreValue}>{overlapPct}%</Text>
-            <Text style={styles.scoreLabel}>overlap</Text>
+            <Text style={styles.scoreValue}>{compatibilityPct}%</Text>
+            <Text style={styles.scoreLabel}>compatibility</Text>
           </View>
         </View>
 

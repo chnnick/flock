@@ -59,7 +59,7 @@ export interface ApiCommuteResponse {
   end: ApiCommutePoint;
   time_window: ApiTimeWindow;
   transport_mode: 'walk' | 'transit';
-  match_preference: 'individual' | 'group';
+  match_preference: 'individual' | 'group' | 'both';
   group_size_pref: ApiGroupSizePreference;
   gender_preference: 'any' | 'same';
   status: 'queued' | 'paused';
@@ -78,7 +78,7 @@ export interface ApiCommuteCreate {
   end: ApiCommutePoint;
   time_window: ApiTimeWindow;
   transport_mode: 'walk' | 'transit';
-  match_preference: 'individual' | 'group';
+  match_preference: 'individual' | 'group' | 'both';
   group_size_pref: ApiGroupSizePreference;
   gender_preference: 'any' | 'same';
   enable_queue_flow: boolean;

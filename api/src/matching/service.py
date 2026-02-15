@@ -21,6 +21,7 @@ from src.matching.algorithm import (
     MatchingUser,
     run_matching_algorithm,
 )
+from src.matching.geospatial import haversine_meters
 from src.matching.settings import MATCHING_SETTINGS
 
 
@@ -67,14 +68,88 @@ def _to_algorithm_user(user: User) -> MatchingUser:
     )
 
 
+def _segment_destination_name(label: str | None) -> str | None:
+    if not isinstance(label, str):
+        return None
+    text = label.strip()
+    if not text:
+        return None
+    lower_text = text.lower()
+    if lower_text == "walk segment":
+        return None
+    marker = " to "
+    marker_index = lower_text.rfind(marker)
+    if marker_index == -1:
+        return None
+    destination = text[marker_index + len(marker) :].strip()
+    return destination or None
+
+
+def _named_points_for_commute(commute: Commute) -> list[tuple[str, tuple[float, float]]]:
+    points: list[tuple[str, tuple[float, float]]] = [
+        (commute.start.name, (commute.start.lat, commute.start.lng)),
+        (commute.end.name, (commute.end.lat, commute.end.lng)),
+    ]
+    for segment in commute.route_segments:
+        destination_name = _segment_destination_name(segment.label)
+        if not destination_name or not segment.coordinates:
+            continue
+        destination_coordinate = segment.coordinates[-1]
+        points.append((destination_name, (destination_coordinate[0], destination_coordinate[1])))
+    return points
+
+
+def _nearest_point_name(
+    target: tuple[float, float],
+    commutes: list[Commute],
+    *,
+    max_distance_meters: float = 400.0,
+) -> str | None:
+    best_name: str | None = None
+    best_distance = float("inf")
+    for commute in commutes:
+        for name, point in _named_points_for_commute(commute):
+            distance = haversine_meters(target, point)
+            if distance < best_distance:
+                best_distance = distance
+                best_name = name
+    if best_name is None or best_distance > max_distance_meters:
+        return None
+    return best_name
+
+
+def _participant_commutes_for_candidate(
+    candidate: MatchCandidate,
+    commute_by_user_id: dict[str, Commute],
+) -> list[Commute]:
+    return [
+        commute_by_user_id[user_id]
+        for user_id in candidate.participants
+        if user_id in commute_by_user_id
+    ]
+
+
+def _as_aware_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _candidate_to_match_doc(
     candidate: MatchCandidate,
     source: Literal["suggested", "queue_assigned"],
     status: Literal["suggested", "assigned"],
+    participant_commutes: list[Commute],
     commute_date: date | None = None,
 ) -> MatchSuggestion:
     now = datetime.now(timezone.utc)
     decisions = [ParticipantDecision(auth0_id=auth0_id) for auth0_id in candidate.participants]
+    meet_target = (candidate.overlap.meet_point.lat, candidate.overlap.meet_point.lng)
+    split_target = (candidate.overlap.split_point.lat, candidate.overlap.split_point.lng)
+    meet_name = _nearest_point_name(meet_target, participant_commutes) or "Shared route start"
+    split_name = _nearest_point_name(split_target, participant_commutes) or "Shared route end"
     return MatchSuggestion(
         source=source,
         kind=candidate.kind,
@@ -88,12 +163,12 @@ def _candidate_to_match_doc(
         ),
         compatibility_percent=round(candidate.scores.composite_score * 100),
         shared_segment_start=MatchPoint(
-            name="Meet point",
+            name=meet_name,
             lat=candidate.overlap.meet_point.lat,
             lng=candidate.overlap.meet_point.lng,
         ),
         shared_segment_end=MatchPoint(
-            name="Split point",
+            name=split_name,
             lat=candidate.overlap.split_point.lat,
             lng=candidate.overlap.split_point.lng,
         ),
@@ -108,7 +183,7 @@ def _candidate_to_match_doc(
 async def _eligible_users_and_commutes(kind: MatchKind) -> tuple[list[User], list[Commute]]:
     suggestion_commutes = await Commute.find(
         Commute.enable_suggestions_flow == True,
-        Commute.match_preference == kind,
+        In(Commute.match_preference, [kind, "both"]),
     ).to_list()
     if not suggestion_commutes:
         return ([], [])
@@ -149,39 +224,57 @@ async def run_suggestions_for_kind(kind: MatchKind) -> list[MatchSuggestion]:
     )
 
     created: list[MatchSuggestion] = []
-    consumed_users: set[str] = set()
+    commute_by_user_id = {commute.user_auth0_id: commute for commute in filtered_commutes}
     existing_matches = await MatchSuggestion.find(
         MatchSuggestion.source == "suggested",
         MatchSuggestion.kind == kind,
     ).to_list()
-    blocked_users = {
-        user_id
+    open_existing_matches = [
+        match
         for match in existing_matches
         if match.status in {"suggested", "active"}
-        for user_id in match.participants
-    }
+        and not (
+            MATCHING_SETTINGS.service.pass_cooldown_days <= 0
+            and match.status == "suggested"
+            and any(decision.passed_at is not None for decision in match.decisions)
+        )
+    ]
+    existing_count_by_user: dict[str, int] = {}
+    for match in open_existing_matches:
+        for user_id in match.participants:
+            existing_count_by_user[user_id] = existing_count_by_user.get(user_id, 0) + 1
+
+    def per_user_limit(user_id: str) -> int:
+        if kind != "individual":
+            return 1
+        commute = commute_by_user_id.get(user_id)
+        if not commute:
+            return 1
+        return 2 if commute.match_preference == "both" else 1
+
     for candidate in candidates:
-        if any(user_id in blocked_users or user_id in consumed_users for user_id in candidate.participants):
-            continue
         existing = next(
             (
-                match
-                for match in existing_matches
-                if match.status in {"suggested", "active"}
-                and set(match.participants) == set(candidate.participants)
+                item
+                for item in open_existing_matches
+                if set(item.participants) == set(candidate.participants)
             ),
             None,
         )
         if existing:
             continue
+        if any(existing_count_by_user.get(user_id, 0) >= per_user_limit(user_id) for user_id in candidate.participants):
+            continue
+        participant_commutes = _participant_commutes_for_candidate(candidate, commute_by_user_id)
         document = _candidate_to_match_doc(
             candidate=candidate,
             source="suggested",
             status="suggested",
+            participant_commutes=participant_commutes,
         )
         await document.insert()
         for user_id in candidate.participants:
-            consumed_users.add(user_id)
+            existing_count_by_user[user_id] = existing_count_by_user.get(user_id, 0) + 1
         created.append(document)
     return created
 
@@ -190,7 +283,7 @@ async def run_queue_assignments_for_kind(kind: MatchKind, commute_date: date) ->
     queued_commutes = await Commute.find(
         Commute.status == "queued",
         Commute.enable_queue_flow == True,
-        Commute.match_preference == kind,
+        In(Commute.match_preference, [kind, "both"]),
     ).to_list()
     if not queued_commutes:
         return []
@@ -213,6 +306,7 @@ async def run_queue_assignments_for_kind(kind: MatchKind, commute_date: date) ->
         interest_weight=MATCHING_SETTINGS.algorithm.interest_weight,
         shared_meters_per_minute=MATCHING_SETTINGS.algorithm.shared_meters_per_minute,
     )
+    commute_by_user_id = {commute.user_auth0_id: commute for commute in commutes}
     created: list[MatchSuggestion] = []
     now = datetime.now(timezone.utc)
     existing_queue_matches = await MatchSuggestion.find(
@@ -316,10 +410,12 @@ async def run_queue_assignments_for_kind(kind: MatchKind, commute_date: date) ->
         )
         if existing:
             continue
+        participant_commutes = _participant_commutes_for_candidate(candidate, commute_by_user_id)
         document = _candidate_to_match_doc(
             candidate=candidate,
             source="queue_assigned",
             status="assigned",
+            participant_commutes=participant_commutes,
             commute_date=commute_date,
         )
         await document.insert()
@@ -355,7 +451,13 @@ async def list_suggestions_for_user(auth0_id: str, kind: MatchKind) -> list[Matc
         decision = next((item for item in suggestion.decisions if item.auth0_id == auth0_id), None)
         if not decision:
             continue
-        if decision.pass_cooldown_until and decision.pass_cooldown_until > now:
+        if (
+            MATCHING_SETTINGS.service.pass_cooldown_days <= 0
+            and decision.passed_at is not None
+        ):
+            continue
+        cooldown_until = _as_aware_utc(decision.pass_cooldown_until)
+        if cooldown_until and cooldown_until > now:
             continue
         if decision.accepted_at is not None:
             continue
@@ -426,13 +528,17 @@ async def pass_suggestion(auth0_id: str, suggestion_id: str) -> MatchSuggestion 
         return suggestion
 
     now = datetime.now(timezone.utc)
+    cooldown_days = MATCHING_SETTINGS.service.pass_cooldown_days
     for decision in suggestion.decisions:
         if decision.auth0_id == auth0_id:
             decision.passed_at = now
             decision.accepted_at = None
-            decision.pass_cooldown_until = now + timedelta(
-                days=MATCHING_SETTINGS.service.pass_cooldown_days
-            )
+            if cooldown_days > 0:
+                decision.pass_cooldown_until = now + timedelta(days=cooldown_days)
+            else:
+                decision.pass_cooldown_until = now
+    if cooldown_days <= 0:
+        suggestion.status = "completed"
     suggestion.updated_at = now
     await suggestion.save()
     return suggestion

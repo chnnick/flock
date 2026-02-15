@@ -15,8 +15,12 @@ def _normalized_group_size(
 ) -> tuple[int, int]:
     if preference == "individual":
         return (2, 2)
-    normalized_min = max(3, requested_min)
-    normalized_max = max(normalized_min, min(4, requested_max))
+    if preference == "group":
+        normalized_min = max(3, requested_min)
+        normalized_max = max(normalized_min, min(4, requested_max))
+        return (normalized_min, normalized_max)
+    normalized_min = max(2, requested_min)
+    normalized_max = max(max(normalized_min, 3), min(4, requested_max))
     return (normalized_min, normalized_max)
 
 
@@ -155,7 +159,7 @@ async def patch_my_commute(auth0_id: str, payload: CommuteUpdate) -> Commute | N
         commute.group_size_pref = {"min": 2, "max": 2}
     else:
         min_size, max_size = _normalized_group_size(
-            "group",
+            commute.match_preference,
             commute.group_size_pref["min"],
             commute.group_size_pref["max"],
         )

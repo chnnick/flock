@@ -39,7 +39,7 @@ export interface Commute {
   earliestDeparture: string;
   latestArrival: string;
   transportMode: 'walk' | 'transit';
-  matchPreference: 'group' | 'individual';
+  matchPreference: 'group' | 'individual' | 'both';
   genderPreference: 'any' | 'same';
   status: 'queued' | 'paused' | 'matched' | 'completed';
   createdAt: string;
@@ -66,6 +66,7 @@ export interface MatchProfile {
 export interface Match {
   id: string;
   participants: MatchProfile[];
+  compatibilityPercent: number;
   overlapScore: number;
   interestScore: number;
   compositeScore: number;
@@ -129,6 +130,7 @@ interface AppContextValue {
   completeOnboarding: () => Promise<void>;
   clearPendingReview: () => void;
   triggerMatching: () => Promise<void>;
+  refreshMatches: () => Promise<void>;
   joinQueue: () => Promise<void>;
   leaveQueue: () => Promise<void>;
   logout: () => Promise<void>;
@@ -265,6 +267,7 @@ function matchFromApi(match: ApiMatchSuggestion, self: UserProfile | null): Matc
   return {
     id: match.id,
     participants,
+    compatibilityPercent: match.compatibility_percent,
     overlapScore: match.scores.overlap_score,
     interestScore: match.scores.interest_score,
     compositeScore: match.scores.composite_score,
@@ -314,38 +317,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .sort((a, b) => b.compositeScore - a.compositeScore);
     setMatches(mappedMatches);
 
-    const rooms = await getChats();
-    const details = await Promise.all(rooms.map((room) => getChatRoom(room.id)));
-    const mappedRooms: ChatRoom[] = details
-      .filter((room) => matchById.has(room.match_id))
-      .map((room) => {
-        const relatedMatch = matchById.get(room.match_id);
-        const roomParticipants = relatedMatch
-          ? relatedMatch.participants
-            .filter((participant) => participant.auth0_id !== currentUser?.id)
-            .map((participant) => participantProfileFromApi(participant, currentUser))
-          : room.participants
-        .filter((participant) => participant !== currentUser?.id)
-        .map((id) => participantProfile(id, currentUser));
-      return {
-        id: room.id,
-        matchId: room.match_id,
-        participants: roomParticipants,
-        messages: room.messages.map((message) => ({
-          id: message.id,
-          senderId: message.sender_auth0_id ?? 'system',
-          senderName: message.sender_name,
-          body: message.body,
-          timestamp: message.created_at,
-          isSystem: message.is_system,
-        })),
-        type: room.type,
-        lastMessage: room.last_message ?? undefined,
-        lastMessageTime: room.last_message_time ?? undefined,
-        createdAt: room.created_at,
-      };
-    });
-    setChatRooms(mappedRooms.sort((a, b) => new Date(b.lastMessageTime ?? b.createdAt).getTime() - new Date(a.lastMessageTime ?? a.createdAt).getTime()));
+    try {
+      const rooms = await getChats();
+      const details = await Promise.all(rooms.map((room) => getChatRoom(room.id)));
+      const mappedRooms: ChatRoom[] = details
+        .filter((room) => matchById.has(room.match_id))
+        .map((room) => {
+          const relatedMatch = matchById.get(room.match_id);
+          const roomParticipants = relatedMatch
+            ? relatedMatch.participants
+              .filter((participant) => participant.auth0_id !== currentUser?.id)
+              .map((participant) => participantProfileFromApi(participant, currentUser))
+            : room.participants
+          .filter((participant) => participant !== currentUser?.id)
+          .map((id) => participantProfile(id, currentUser));
+        return {
+          id: room.id,
+          matchId: room.match_id,
+          participants: roomParticipants,
+          messages: room.messages.map((message) => ({
+            id: message.id,
+            senderId: message.sender_auth0_id ?? 'system',
+            senderName: message.sender_name,
+            body: message.body,
+            timestamp: message.created_at,
+            isSystem: message.is_system,
+          })),
+          type: room.type,
+          lastMessage: room.last_message ?? undefined,
+          lastMessageTime: room.last_message_time ?? undefined,
+          createdAt: room.created_at,
+        };
+      });
+      setChatRooms(mappedRooms.sort((a, b) => new Date(b.lastMessageTime ?? b.createdAt).getTime() - new Date(a.lastMessageTime ?? a.createdAt).getTime()));
+    } catch (error) {
+      console.error('Failed to refresh chats', error);
+      setChatRooms([]);
+    }
 
     try {
       const latestCommute = await getMeCommute();
@@ -368,8 +376,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setCommuteFriends(JSON.parse(friendsRaw));
         }
 
-        const apiUser = await getMeUser();
-        const mappedUser = userFromApi(apiUser);
+        let mappedUser: UserProfile;
+        try {
+          const apiUser = await getMeUser();
+          mappedUser = userFromApi(apiUser);
+        } catch (error) {
+          if (isNotFoundError(error)) {
+            setUserState(null);
+            setCommuteState(null);
+            setMatches([]);
+            setChatRooms([]);
+            setIsOnboarded(false);
+            return;
+          }
+          console.error('Failed to fetch current user', error);
+          return;
+        }
         setUserState(mappedUser);
         setIsOnboarded(true);
 
@@ -383,21 +405,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setCommuteState(null);
         }
 
-        await refreshMatchesAndChats(mappedUser);
-      } catch (error) {
-        if (isNotFoundError(error)) {
-          setUserState(null);
-          setCommuteState(null);
+        try {
+          await refreshMatchesAndChats(mappedUser);
+        } catch (error) {
+          console.error('Failed to refresh matches and chats', error);
           setMatches([]);
           setChatRooms([]);
-          setIsOnboarded(false);
-        } else {
-          console.error('Failed to initialize app data', error);
         }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      } finally {
+        setIsLoading(false);
+      }
+    };
     load();
   }, [refreshMatchesAndChats]);
 
@@ -438,7 +456,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
       transport_mode: newCommute.transportMode,
       match_preference: newCommute.matchPreference,
-      group_size_pref: newCommute.matchPreference === 'individual' ? { min: 2, max: 2 } : { min: 3, max: 4 },
+      group_size_pref:
+        newCommute.matchPreference === 'individual'
+          ? { min: 2, max: 2 }
+          : newCommute.matchPreference === 'group'
+            ? { min: 3, max: 4 }
+            : { min: 2, max: 4 },
       gender_preference: newCommute.genderPreference,
       enable_queue_flow: true,
       enable_suggestions_flow: true,
@@ -450,6 +473,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const triggerMatching = useCallback(async () => {
     await runMatching(false);
+    await refreshMatchesAndChats(user);
+  }, [refreshMatchesAndChats, user]);
+
+  const refreshMatches = useCallback(async () => {
     await refreshMatchesAndChats(user);
   }, [refreshMatchesAndChats, user]);
 
@@ -627,6 +654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     completeOnboarding,
     clearPendingReview,
     triggerMatching,
+    refreshMatches,
     joinQueue,
     leaveQueue,
     logout,
@@ -652,6 +680,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     completeOnboarding,
     clearPendingReview,
     triggerMatching,
+    refreshMatches,
     joinQueue,
     leaveQueue,
     logout,

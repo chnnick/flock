@@ -9,6 +9,31 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 
+function displayToMinute(value: string): number {
+  const trimmed = value.trim().toUpperCase();
+  const match = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
+  if (!match) {
+    return 0;
+  }
+  const rawHours = Number(match[1]);
+  const mins = Number(match[2] ?? 0);
+  const ampm = match[3];
+  let hours = rawHours % 12;
+  if (ampm === 'PM') {
+    hours += 12;
+  }
+  return Math.max(0, Math.min(1439, hours * 60 + mins));
+}
+
+function minuteToDisplay(minute: number): string {
+  const normalized = ((minute % 1440) + 1440) % 1440;
+  const hours24 = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  const ampm = hours24 >= 12 ? 'PM' : 'AM';
+  const hours12 = hours24 % 12 || 12;
+  return `${hours12}:${mins.toString().padStart(2, '0')} ${ampm}`;
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -16,6 +41,17 @@ export default function HomeScreen() {
   const [showHowFlockWorks, setShowHowFlockWorks] = useState(false);
   const activeMatches = matches.filter(m => m.status === 'active');
   const pendingMatches = matches.filter(m => m.status === 'pending');
+  const displayedEndTime = commute?.otpTotalDurationMinutes != null
+    ? minuteToDisplay(displayToMinute(commute.earliestDeparture) + commute.otpTotalDurationMinutes)
+    : commute?.latestArrival;
+  const preferenceLabel = commute?.matchPreference === 'group'
+    ? 'Group'
+    : commute?.matchPreference === 'both'
+      ? 'Both'
+      : 'Individual';
+  const preferenceIcon = commute?.matchPreference === 'both'
+    ? 'git-compare-outline'
+    : 'people-outline';
 
   const handleFindMatches = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -98,13 +134,13 @@ export default function HomeScreen() {
                 <View style={styles.timeItem}>
                   <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.7)" />
                   <Text style={styles.timeText}>
-                    {commute.earliestDeparture} - {commute.latestArrival}
+                    {commute.earliestDeparture} - {displayedEndTime}
                   </Text>
                 </View>
                 <View style={styles.timeItem}>
-                  <Ionicons name="people-outline" size={16} color="rgba(255,255,255,0.7)" />
+                  <Ionicons name={preferenceIcon as any} size={16} color="rgba(255,255,255,0.7)" />
                   <Text style={styles.timeText}>
-                    {commute.matchPreference === 'group' ? 'Group' : 'Individual'}
+                    {preferenceLabel}
                   </Text>
                 </View>
               </View>

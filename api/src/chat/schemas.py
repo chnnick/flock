@@ -37,3 +37,32 @@ class QuestionsRequest(BaseModel):
 
 class QuestionsResponse(BaseModel):
     questions: str
+
+
+class ChatRoomSummaryResponse(BaseModel):
+    id: str
+    match_id: str
+    participants: list[str]
+    type: str
+    last_message: str | None
+    last_message_time: str | None
+    created_at: str
+    updated_at: str
+
+
+class ChatMessageResponse(BaseModel):
+    id: str
+    chat_room_id: str
+    sender_auth0_id: str | None
+    sender_name: str
+    body: str
+    is_system: bool
+    created_at: str
+
+
+class ChatRoomDetailResponse(ChatRoomSummaryResponse):
+    messages: list[ChatMessageResponse]
+
+
+class SendMessageRequest(BaseModel):
+    body: str

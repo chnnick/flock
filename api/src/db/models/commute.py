@@ -37,7 +37,7 @@ class Commute(Document):
     end: CommutePoint
     time_window: TimeWindow
     transport_mode: Literal["walk", "transit"]
-    match_preference: Literal["individual", "group"]
+    match_preference: Literal["individual", "group", "both"]
     group_size_pref: GroupSizePreference
     gender_preference: Literal["any", "same"] = "any"
     status: Literal["queued", "paused"] = "paused"

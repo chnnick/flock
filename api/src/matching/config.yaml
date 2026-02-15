@@ -2,8 +2,8 @@ algorithm:
   min_time_overlap_minutes: 10
   min_overlap_distance_meters: 250.0
   overlap_tolerance_meters: 120.0
-  overlap_weight: 0.7
-  interest_weight: 0.3
+  overlap_weight: 0.5
+  interest_weight: 0.5
   shared_meters_per_minute: 80.0
 
 service:

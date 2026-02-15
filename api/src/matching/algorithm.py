@@ -11,6 +11,7 @@ from src.matching.geospatial import (
 )
 
 MatchKind = Literal["individual", "group"]
+MatchPreference = Literal["individual", "group", "both"]
 TransportMode = Literal["walk", "transit"]
 GenderPreference = Literal["any", "same"]
 
@@ -26,7 +27,7 @@ class MatchingUser:
 class MatchingCommute:
     user_auth0_id: str
     transport_mode: TransportMode
-    match_preference: MatchKind
+    match_preference: MatchPreference
     group_size_min: int
     group_size_max: int
     gender_preference: GenderPreference
@@ -179,23 +180,44 @@ def _build_pair_compatibility(
     return compatibilities
 
 
-def _build_individual_matches(compatibilities: list[_PairCompatibility]) -> list[MatchCandidate]:
+def _individual_match_limit(commute: MatchingCommute) -> int:
+    return 2 if commute.match_preference == "both" else 1
+
+
+def _both_participant_count(
+    pair: _PairCompatibility,
+    commutes_by_user_id: dict[str, MatchingCommute],
+) -> int:
+    left = commutes_by_user_id[pair.left_user_id].match_preference == "both"
+    right = commutes_by_user_id[pair.right_user_id].match_preference == "both"
+    return int(left) + int(right)
+
+
+def _build_individual_matches(
+    compatibilities: list[_PairCompatibility],
+    commutes_by_user_id: dict[str, MatchingCommute],
+) -> list[MatchCandidate]:
     sorted_pairs = sorted(
         compatibilities,
         key=lambda pair: (
+            _both_participant_count(pair, commutes_by_user_id),
             pair.score.composite_score,
             tuple(sorted((pair.left_user_id, pair.right_user_id))),
         ),
         reverse=True,
     )
-    consumed_users: set[str] = set()
+    selected_count_by_user: dict[str, int] = {}
     selected: list[MatchCandidate] = []
 
     for pair in sorted_pairs:
-        if pair.left_user_id in consumed_users or pair.right_user_id in consumed_users:
+        left_count = selected_count_by_user.get(pair.left_user_id, 0)
+        right_count = selected_count_by_user.get(pair.right_user_id, 0)
+        left_limit = _individual_match_limit(commutes_by_user_id[pair.left_user_id])
+        right_limit = _individual_match_limit(commutes_by_user_id[pair.right_user_id])
+        if left_count >= left_limit or right_count >= right_limit:
             continue
-        consumed_users.add(pair.left_user_id)
-        consumed_users.add(pair.right_user_id)
+        selected_count_by_user[pair.left_user_id] = left_count + 1
+        selected_count_by_user[pair.right_user_id] = right_count + 1
         selected.append(
             MatchCandidate(
                 participants=[pair.left_user_id, pair.right_user_id],
@@ -260,7 +282,7 @@ def _build_group_matches(
     available_users = {
         commute.user_auth0_id
         for commute in commutes_by_user_id.values()
-        if commute.match_preference == "group"
+        if commute.match_preference in {"group", "both"}
     }
     selected: list[MatchCandidate] = []
 
@@ -321,7 +343,7 @@ def run_matching_algorithm(
         user.auth0_id
         for user in users
         if user.auth0_id in commutes_by_user_id
-        and commutes_by_user_id[user.auth0_id].match_preference == kind
+        and commutes_by_user_id[user.auth0_id].match_preference in {kind, "both"}
     ]
     filtered_users = {user_id: users_by_id[user_id] for user_id in eligible_user_ids}
     filtered_commutes = {user_id: commutes_by_user_id[user_id] for user_id in eligible_user_ids}
@@ -342,6 +364,6 @@ def run_matching_algorithm(
         return []
 
     if kind == "individual":
-        return _build_individual_matches(pair_compatibilities)
+        return _build_individual_matches(pair_compatibilities, filtered_commutes)
     return _build_group_matches(pair_compatibilities, filtered_commutes)
 

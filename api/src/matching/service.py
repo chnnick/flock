@@ -129,6 +129,14 @@ def _participant_commutes_for_candidate(
     ]
 
 
+def _as_aware_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _candidate_to_match_doc(
     candidate: MatchCandidate,
     source: Literal["suggested", "queue_assigned"],
@@ -225,6 +233,11 @@ async def run_suggestions_for_kind(kind: MatchKind) -> list[MatchSuggestion]:
         match
         for match in existing_matches
         if match.status in {"suggested", "active"}
+        and not (
+            MATCHING_SETTINGS.service.pass_cooldown_days <= 0
+            and match.status == "suggested"
+            and any(decision.passed_at is not None for decision in match.decisions)
+        )
     ]
     existing_count_by_user: dict[str, int] = {}
     for match in open_existing_matches:
@@ -438,7 +451,13 @@ async def list_suggestions_for_user(auth0_id: str, kind: MatchKind) -> list[Matc
         decision = next((item for item in suggestion.decisions if item.auth0_id == auth0_id), None)
         if not decision:
             continue
-        if decision.pass_cooldown_until and decision.pass_cooldown_until > now:
+        if (
+            MATCHING_SETTINGS.service.pass_cooldown_days <= 0
+            and decision.passed_at is not None
+        ):
+            continue
+        cooldown_until = _as_aware_utc(decision.pass_cooldown_until)
+        if cooldown_until and cooldown_until > now:
             continue
         if decision.accepted_at is not None:
             continue
@@ -509,13 +528,17 @@ async def pass_suggestion(auth0_id: str, suggestion_id: str) -> MatchSuggestion 
         return suggestion
 
     now = datetime.now(timezone.utc)
+    cooldown_days = MATCHING_SETTINGS.service.pass_cooldown_days
     for decision in suggestion.decisions:
         if decision.auth0_id == auth0_id:
             decision.passed_at = now
             decision.accepted_at = None
-            decision.pass_cooldown_until = now + timedelta(
-                days=MATCHING_SETTINGS.service.pass_cooldown_days
-            )
+            if cooldown_days > 0:
+                decision.pass_cooldown_until = now + timedelta(days=cooldown_days)
+            else:
+                decision.pass_cooldown_until = now
+    if cooldown_days <= 0:
+        suggestion.status = "completed"
     suggestion.updated_at = now
     await suggestion.save()
     return suggestion

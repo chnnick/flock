@@ -14,13 +14,15 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAuth0 } from 'react-native-auth0';
 import Colors from '@/constants/colors';
-import { setAuthToken } from '@/lib/query-client';
+import { getApiUrl, setAuthToken } from '@/lib/query-client';
+import { useApp } from '@/contexts/AppContext';
 
 const AUTH0_AUDIENCE = process.env.EXPO_PUBLIC_AUTH0_AUDIENCE;
 const AUTH0_SCOPE = process.env.EXPO_PUBLIC_AUTH0_SCOPE ?? 'openid profile email';
 const AUTH0_CUSTOM_SCHEME = process.env.EXPO_PUBLIC_AUTH0_CUSTOM_SCHEME ?? 'flock';
 
 export default function SignInScreen() {
+  const { reload } = useApp();
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { authorize, isLoading: sdkLoading } = useAuth0();
@@ -36,7 +38,7 @@ export default function SignInScreen() {
     setLoading(true);
     setError(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
+  
     try {
       const credentials = await authorize(
         {
@@ -48,8 +50,37 @@ export default function SignInScreen() {
           customScheme: AUTH0_CUSTOM_SCHEME,
         },
       );
+  
+      if (!credentials?.accessToken) {
+        setError('Sign-in was cancelled or returned no token.');
+        return;
+      }
+  
       await setAuthToken(credentials.accessToken);
-      router.replace('/(onboarding)/profile');
+      await reload();
+
+      router.replace('/');
+  
+      // Check if user already has a profile in the backend
+      try {
+        const res = await fetch(getApiUrl() + 'api/users/me', {
+          headers: { Authorization: `Bearer ${credentials.accessToken}` },
+        });
+  
+        if (res.ok) {
+          // Existing user — skip onboarding, go straight to main app
+          router.replace('/(tabs)');
+        } else if (res.status === 404) {
+          // New user — needs onboarding
+          router.replace('/(onboarding)/profile');
+        } else {
+          // Auth or other error
+          router.replace('/(onboarding)/profile');
+        }
+      } catch {
+        // Network error — fall back to onboarding
+        router.replace('/(onboarding)/profile');
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Sign-in failed. Try again.';
       setError(message);

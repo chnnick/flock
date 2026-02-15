@@ -18,7 +18,7 @@ import {
   runMatching,
   sendChatMessage,
 } from '@/lib/backend-api';
-import { deleteAuthToken } from '@/lib/query-client';
+import { deleteAuthToken, getAuthToken } from '@/lib/query-client';
 import { ApiCommuteResponse, ApiMatchParticipantProfile, ApiMatchSuggestion, ApiUser } from '@/lib/api-types';
 
 export interface UserProfile {
@@ -116,6 +116,7 @@ interface AppContextValue {
   pendingReview: Match | null;
   isLoading: boolean;
   isOnboarded: boolean;
+  reload: () => Promise<void>;
   setUser: (user: UserProfile) => Promise<void>;
   setCommute: (commute: Commute) => Promise<void>;
   acceptMatch: (matchId: string) => Promise<void>;
@@ -238,7 +239,7 @@ function participantProfile(participantId: string, self: UserProfile | null): Ma
 
 function participantProfileFromApi(participant: ApiMatchParticipantProfile, self: UserProfile | null): MatchProfile {
   if (self && participant.auth0_id === self.id) {
-      return {
+    return {
       id: self.id,
       name: self.name,
       occupation: self.occupation,
@@ -291,6 +292,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [pendingReview, setPendingReview] = useState<Match | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const reload = useCallback(async () => {
+    setReloadKey((k) => k + 1);
+  }, []);
 
   const refreshMatchesAndChats = useCallback(async (currentUser: UserProfile | null) => {
     const [suggestedIndividual, suggestedGroup, activeIndividual, activeGroup] = await Promise.all([
@@ -326,29 +332,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const relatedMatch = matchById.get(room.match_id);
           const roomParticipants = relatedMatch
             ? relatedMatch.participants
-              .filter((participant) => participant.auth0_id !== currentUser?.id)
-              .map((participant) => participantProfileFromApi(participant, currentUser))
+                .filter((participant) => participant.auth0_id !== currentUser?.id)
+                .map((participant) => participantProfileFromApi(participant, currentUser))
             : room.participants
-          .filter((participant) => participant !== currentUser?.id)
-          .map((id) => participantProfile(id, currentUser));
-        return {
-          id: room.id,
-          matchId: room.match_id,
-          participants: roomParticipants,
-          messages: room.messages.map((message) => ({
-            id: message.id,
-            senderId: message.sender_auth0_id ?? 'system',
-            senderName: message.sender_name,
-            body: message.body,
-            timestamp: message.created_at,
-            isSystem: message.is_system,
-          })),
-          type: room.type,
-          lastMessage: room.last_message ?? undefined,
-          lastMessageTime: room.last_message_time ?? undefined,
-          createdAt: room.created_at,
-        };
-      });
+                .filter((participant) => participant !== currentUser?.id)
+                .map((id) => participantProfile(id, currentUser));
+          return {
+            id: room.id,
+            matchId: room.match_id,
+            participants: roomParticipants,
+            messages: room.messages.map((message) => ({
+              id: message.id,
+              senderId: message.sender_auth0_id ?? 'system',
+              senderName: message.sender_name,
+              body: message.body,
+              timestamp: message.created_at,
+              isSystem: message.is_system,
+            })),
+            type: room.type,
+            lastMessage: room.last_message ?? undefined,
+            lastMessageTime: room.last_message_time ?? undefined,
+            createdAt: room.created_at,
+          };
+        });
       setChatRooms(mappedRooms.sort((a, b) => new Date(b.lastMessageTime ?? b.createdAt).getTime() - new Date(a.lastMessageTime ?? a.createdAt).getTime()));
     } catch (error) {
       console.error('Failed to refresh chats', error);
@@ -374,6 +380,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const friendsRaw = await AsyncStorage.getItem('flock_friends');
         if (friendsRaw) {
           setCommuteFriends(JSON.parse(friendsRaw));
+        }
+
+        const token = await getAuthToken();
+        if (!token) {
+          setUserState(null);
+          setCommuteState(null);
+          setMatches([]);
+          setChatRooms([]);
+          setIsOnboarded(false);
+          return;
         }
 
         let mappedUser: UserProfile;
@@ -417,7 +433,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     };
     load();
-  }, [refreshMatchesAndChats]);
+  }, [refreshMatchesAndChats, reloadKey]);
 
   useEffect(() => {
     if (!user) {
@@ -517,8 +533,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const relatedMatch = matches.find((item) => item.chatRoomId === room.id);
     const roomParticipants = relatedMatch?.participants
       ?? room.participants
-      .filter((participant) => participant !== user?.id)
-      .map((id) => participantProfile(id, user));
+        .filter((participant) => participant !== user?.id)
+        .map((id) => participantProfile(id, user));
     const mappedRoom: ChatRoom = {
       id: room.id,
       matchId: room.match_id,
@@ -620,6 +636,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    await deleteAuthToken();
+    await AsyncStorage.multiRemove(['flock_friends']);
     setUserState(null);
     setCommuteState(null);
     setMatches([]);
@@ -627,8 +645,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCommuteFriends([]);
     setIsOnboarded(false);
     setPendingReview(null);
-    await deleteAuthToken();
-    await AsyncStorage.multiRemove(['flock_friends', 'flock_user', 'flock_commute', 'flock_matches', 'flock_chats', 'flock_onboarded']);
   }, []);
 
   const value = useMemo(() => ({
@@ -640,6 +656,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     pendingReview,
     isLoading,
     isOnboarded,
+    reload,
     setUser,
     setCommute,
     acceptMatch,
@@ -667,6 +684,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     pendingReview,
     isLoading,
     isOnboarded,
+    reload,
     setUser,
     setCommute,
     acceptMatch,

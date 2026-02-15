@@ -26,8 +26,9 @@ export default function ProfileScreen() {
       } catch {
         // Ignore if no session or clearSession fails
       }
+      // Navigate first so we don't stay on profile with user=null (avoids "Unknown" and 401 flashes)
+      router.replace('/');
       await logout();
-      router.replace('/(onboarding)/sign-in' as import('expo-router').Href);
     };
     if (Platform.OS === 'web') {
       doLogout();
@@ -35,7 +36,7 @@ export default function ProfileScreen() {
     }
     Alert.alert(
       'Sign Out',
-      'Are you sure you want to sign out? You will need to create a new account to use the app again.',
+      'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
         {

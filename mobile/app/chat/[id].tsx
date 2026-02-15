@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Platform, KeyboardAvoidingView, Modal, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Platform, KeyboardAvoidingView, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp, ChatMessage, MatchProfile } from '@/contexts/AppContext';
+import { fetchNewQuestions, type MessageForApi } from '@/lib/chat-api';
 
 export default function ChatDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -15,6 +16,8 @@ export default function ChatDetailScreen() {
   const { chatRooms, user, sendMessage, matches, addCommuteFriend, removeCommuteFriend, commuteFriends } = useApp();
   const [inputText, setInputText] = useState('');
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showGeminiModal, setShowGeminiModal] = useState(false);
+  const [geminiLoading, setGeminiLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const room = chatRooms.find(r => r.id === id);
@@ -38,6 +41,49 @@ export default function ChatDetailScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await removeCommuteFriend(profileId);
   };
+
+  const roomToApiMessages = useCallback((r: typeof room): MessageForApi[] => {
+    if (!r || !user) return [];
+    return r.messages.map(m => ({
+      role: m.isSystem ? ('model' as const) : ('user' as const),
+      name: m.isSystem ? 'Flock' : m.senderName,
+      content: m.body,
+    }));
+  }, [user]);
+
+  const handleAskExcitingQuestion = useCallback(async () => {
+    if (!room) return;
+    setGeminiLoading(true);
+    Haptics.selectionAsync();
+    const messages = roomToApiMessages(room);
+    console.log('loading messages from gemini');
+    const questions = await fetchNewQuestions(messages);
+    setGeminiLoading(false);
+    setShowGeminiModal(false);
+
+    console.log('EXPO_PUBLIC_DOMAIN:', process.env.EXPO_PUBLIC_DOMAIN);
+
+
+    console.log('questions', questions);   
+    if (questions) {
+      setInputText(questions);
+    } else {
+      console.log('no questions from gemini');
+    }
+  }, [room, roomToApiMessages]);
+
+  const handleGetConversationBoost = useCallback(async () => {
+    if (!room) return;
+    setGeminiLoading(true);
+    Haptics.selectionAsync();
+    const messages = roomToApiMessages(room);
+    const questions = await fetchNewQuestions(messages);
+    setGeminiLoading(false);
+    setShowGeminiModal(false);
+    if (questions) {
+      setInputText(questions);
+    }
+  }, [room, roomToApiMessages]);
 
   if (!room || !user) {
     return (
@@ -134,9 +180,15 @@ export default function ChatDetailScreen() {
       <View style={[styles.inputContainer, { paddingBottom: Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 12) }]}>
         <View style={styles.inputRow}>
           <View style={styles.inputWrapper}>
-            <View style={styles.geminiLogo}>
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                setShowGeminiModal(true);
+              }}
+              style={styles.geminiLogo}
+            >
               <Ionicons name="sparkles" size={20} color={Colors.primary} />
-            </View>
+            </Pressable>
             <TextInput
               style={styles.textInput}
               value={inputText}
@@ -227,6 +279,50 @@ export default function ChatDetailScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={showGeminiModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowGeminiModal(false)}
+      >
+        <Pressable
+          style={styles.geminiModalOverlay}
+          onPress={() => setShowGeminiModal(false)}
+        >
+          <View style={[styles.geminiModalContent, { marginBottom: insets.bottom + 100 }]}>
+            <View style={styles.geminiModalHeader}>
+              <View style={styles.geminiModalIcon}>
+                <Ionicons name="sparkles" size={24} color={Colors.primary} />
+              </View>
+              <Text style={styles.geminiModalTitle}>Gemini</Text>
+            </View>
+            {geminiLoading ? (
+              <View style={styles.geminiModalLoading}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.geminiModalLoadingText}>Thinking...</Text>
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  style={({ pressed }) => [styles.geminiModalOption, pressed && { opacity: 0.7 }]}
+                  onPress={handleAskExcitingQuestion}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={22} color={Colors.primary} />
+                  <Text style={styles.geminiModalOptionText}>Ask an exciting question!</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.geminiModalOption, pressed && { opacity: 0.7 }]}
+                  onPress={handleGetConversationBoost}
+                >
+                  <Ionicons name="flame-outline" size={22} color={Colors.primary} />
+                  <Text style={styles.geminiModalOptionText}>Get a conversation boost</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        </Pressable>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -641,6 +737,65 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
+    fontFamily: 'Outfit_400Regular',
+    color: Colors.textSecondary,
+  },
+  geminiModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+  },
+  geminiModalContent: {
+    backgroundColor: Colors.card,
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  geminiModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  geminiModalIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  geminiModalTitle: {
+    fontSize: 18,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.text,
+  },
+  geminiModalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    marginBottom: 8,
+  },
+  geminiModalOptionText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_500Medium',
+    color: Colors.text,
+  },
+  geminiModalLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 24,
+  },
+  geminiModalLoadingText: {
+    fontSize: 15,
     fontFamily: 'Outfit_400Regular',
     color: Colors.textSecondary,
   },

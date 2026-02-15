@@ -29,7 +29,7 @@ Always maintain your friendly, enthusiastic, and welcoming personality.
         prompt = "Please introduce these mutual friends to each other and highlight what they have in common: \n\n" + "\n".join(users_info)
         
         response = self.client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             config=types.GenerateContentConfig(
                 system_instruction=self.system_instruction,
             ),
@@ -50,12 +50,12 @@ Always maintain your friendly, enthusiastic, and welcoming personality.
         {chat_history}
         
         Analyze if the conversation is getting dry or needs a boost. 
-        If it does, provide a lively and bubbly response to keep the conversation going with a question.
+        If it does, provide a lively and bubbly response to the other user to keep the conversation going with a question.
         If the conversation is already flowing well, return precisely the word "FLOWING".
         """
         
         response = self.client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             config=types.GenerateContentConfig(
                 system_instruction=self.system_instruction,
             ),
@@ -69,7 +69,8 @@ Always maintain your friendly, enthusiastic, and welcoming personality.
 
     def generate_new_questions(self, messages: List[Dict]) -> str:
         """
-        Poses new questions for the conversation based on the context.
+        Generates a brief question one participant could ask the other(s) based on context.
+        Output is framed as the sender directly addressing the recipient(s), not as an intermediary.
         """
         chat_history = "\n".join([f"{m.get('name', m['role'])}: {m['content']}" for m in messages])
         
@@ -77,12 +78,13 @@ Always maintain your friendly, enthusiastic, and welcoming personality.
         Based on this conversation:
         {chat_history}
         
-        Pose a few new, exciting questions to help these friends learn more about each other.
-        Maintain your bubbly and kind persona.
+        Write ONE brief question (1–2 short sentences max) that a participant could ask the other(s) to keep the conversation going.
+        Write it as if YOU are directly asking them—e.g. "What's your favorite spot in the city?"—not as a moderator or third party.
+        Do NOT phrase it as "You could ask..." or address both people at once. Keep it short and natural.
         """
         
         response = self.client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             config=types.GenerateContentConfig(
                 system_instruction=self.system_instruction,
             ),

@@ -93,6 +93,7 @@ interface AppContextValue {
   acceptMatch: (matchId: string) => Promise<void>;
   declineMatch: (matchId: string) => Promise<void>;
   sendMessage: (chatRoomId: string, body: string) => Promise<void>;
+  injectSystemMessage: (chatRoomId: string, body: string) => Promise<void>;
   deleteChatRoom: (chatRoomId: string) => Promise<void>;
   submitReview: (matchId: string, enjoyed: boolean) => Promise<void>;
   addCommuteFriend: (profile: MatchProfile) => Promise<void>;
@@ -419,7 +420,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setChatRooms(updatedChats);
     await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
 
-    setTimeout(async () => {
+    setTimeout(() => {
       const room = updatedChats.find(r => r.id === chatRoomId);
       if (!room || room.participants.length === 0) return;
       const responder = room.participants[Math.floor(Math.random() * room.participants.length)];
@@ -459,6 +460,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     }, 1500 + Math.random() * 2000);
   }, [chatRooms, user]);
+
+  const injectSystemMessage = useCallback(async (chatRoomId: string, body: string) => {
+    const systemMessage: ChatMessage = {
+      id: Crypto.randomUUID(),
+      senderId: 'system',
+      senderName: 'Flock',
+      body,
+      timestamp: new Date().toISOString(),
+      isSystem: true,
+    };
+    const updatedChats = chatRooms.map(room => {
+      if (room.id === chatRoomId) {
+        return {
+          ...room,
+          messages: [...room.messages, systemMessage],
+          lastMessage: body,
+          lastMessageTime: systemMessage.timestamp,
+        };
+      }
+      return room;
+    });
+    setChatRooms(updatedChats);
+    await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
+  }, [chatRooms]);
 
   const submitReview = useCallback(async (matchId: string, enjoyed: boolean) => {
     const match = matches.find(m => m.id === matchId);
@@ -576,6 +601,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     acceptMatch,
     declineMatch,
     sendMessage,
+    injectSystemMessage,
     deleteChatRoom,
     submitReview,
     addCommuteFriend,
@@ -586,7 +612,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     triggerMatching,
     logout,
   }), [user, commute, matches, chatRooms, commuteFriends, pendingReview, isLoading, isOnboarded,
-    setUser, setCommute, acceptMatch, declineMatch, sendMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, getOrCreateChatRoomForFriend, completeOnboarding,
+    setUser, setCommute, acceptMatch, declineMatch, sendMessage, injectSystemMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, getOrCreateChatRoomForFriend, completeOnboarding,
     clearPendingReview, triggerMatching, logout]);
 
   return (

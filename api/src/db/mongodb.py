@@ -3,8 +3,6 @@ from pymongo import AsyncMongoClient
 from beanie import init_beanie  
 from src.config import settings
 from src.db.models.user import User
-from src.db.models.chat import ChatMessage, ChatRoom
-
 async def init_db():
     client = AsyncMongoClient(
         settings.MONGO_URI,

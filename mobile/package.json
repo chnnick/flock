@@ -58,6 +58,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
+    "dotenv": "^16.4.5",
     "@babel/core": "^7.25.2",
     "@expo/ngrok": "^4.1.0",
     "@types/react": "~19.1.10",

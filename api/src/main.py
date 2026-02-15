@@ -28,7 +28,6 @@ app.add_middleware(
 app.include_router(users_router, prefix="/api", tags=["users"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 
-
 @app.get("/api/health")
 def health():
     return {"status": "ok"}

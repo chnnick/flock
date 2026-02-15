@@ -6,21 +6,45 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
+  const explicitBaseUrl = getPublicEnvVar("EXPO_PUBLIC_API_BASE_URL");
+  if (explicitBaseUrl) {
+    return explicitBaseUrl.endsWith("/") ? explicitBaseUrl : `${explicitBaseUrl}/`;
+  }
+
+  const host = getPublicEnvVar("EXPO_PUBLIC_DOMAIN");
 
   if (!host) {
     throw new Error("EXPO_PUBLIC_DOMAIN is not set");
   }
 
-  let url = new URL(`https://${host}`);
+  // If already a full URL (http:// or https://), use as-is; otherwise prepend https://
+  const base =
+    host.startsWith("http://") || host.startsWith("https://")
+      ? host
+      : `https://${host}`;
+  const url = new URL(base);
 
-  return url.href;
+  return url.href.endsWith("/") ? url.href : `${url.href}/`;
 }
 
-async function throwIfResNotOk(res: Response) {
+function getAuthHeader(): Record<string, string> {
+  const token = getPublicEnvVar("EXPO_PUBLIC_API_TOKEN");
+  const devAuth0Id = getPublicEnvVar("EXPO_PUBLIC_DEV_AUTH0_ID");
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (devAuth0Id) {
+    headers["x-dev-auth0-id"] = devAuth0Id;
+  }
+  return headers;
+}
+
+async function throwIfResNotOk(res: Response, requestLabel?: string) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const label = requestLabel ? ` ${requestLabel}` : "";
+    throw new Error(`${res.status}: ${text}${label}`);
   }
 }
 
@@ -31,15 +55,16 @@ export async function apiRequest(
 ): Promise<Response> {
   const baseUrl = getApiUrl();
   const url = new URL(route, baseUrl);
+  const urlString = url.toString();
 
-  const res = await fetch(url.toString(), {
+  const res = await fetch(urlString, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
 
-  await throwIfResNotOk(res);
+  await throwIfResNotOk(res, `${method} ${urlString}`);
   return res;
 }
 

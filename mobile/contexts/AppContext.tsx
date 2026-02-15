@@ -1,4 +1,4 @@
-import {createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback, useRef} from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -235,8 +235,77 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(false);
 
-  useEffect(() => {
-    loadData();
+  const refreshMatchesAndChats = useCallback(async (currentUser: UserProfile | null) => {
+    const [suggestedIndividual, suggestedGroup, activeIndividual, activeGroup] = await Promise.all([
+      getSuggestions('individual'),
+      getSuggestions('group'),
+      getActive('individual'),
+      getActive('group'),
+    ]);
+
+    const allMatches = [
+      ...suggestedIndividual,
+      ...suggestedGroup,
+      ...activeIndividual,
+      ...activeGroup,
+    ];
+    const mergedMatches = new Map<string, ApiMatchSuggestion>();
+    allMatches.forEach((match) => mergedMatches.set(match.id, match));
+    const visibleMatches = Array.from(mergedMatches.values()).filter(
+      (match) => match.source === 'suggested' || (match.source === 'queue_assigned' && match.status === 'active'),
+    );
+    const matchById = new Map<string, ApiMatchSuggestion>(visibleMatches.map((match) => [match.id, match]));
+    const mappedMatches = visibleMatches
+      .map((item) => matchFromApi(item, currentUser))
+      .sort((a, b) => b.compositeScore - a.compositeScore);
+    setMatches(mappedMatches);
+
+    const rooms = await getChats();
+    const settled = await Promise.allSettled(rooms.map((room) => getChatRoom(room.id)));
+    const details = settled
+      .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof getChatRoom>>> => r.status === 'fulfilled')
+      .map((r) => r.value);
+    const mappedRooms: ChatRoom[] = details
+      .filter((room) => matchById.has(room.match_id))
+      .map((room) => {
+        const relatedMatch = matchById.get(room.match_id);
+        const roomParticipants = relatedMatch
+          ? relatedMatch.participants
+            .filter((participant) => participant.auth0_id !== currentUser?.id)
+            .map((participant) => participantProfileFromApi(participant, currentUser))
+          : room.participants
+        .filter((participant) => participant !== currentUser?.id)
+        .map((id) => participantProfile(id, currentUser));
+      return {
+        id: room.id,
+        matchId: room.match_id,
+        participants: roomParticipants,
+        messages: room.messages.map((message) => ({
+          id: message.id,
+          senderId: message.sender_auth0_id ?? 'system',
+          senderName: message.sender_name,
+          body: message.body,
+          timestamp: message.created_at,
+          isSystem: message.is_system,
+        })),
+        type: room.type,
+        lastMessage: room.last_message ?? undefined,
+        lastMessageTime: room.last_message_time ?? undefined,
+        createdAt: room.created_at,
+      };
+    });
+    setChatRooms(mappedRooms.sort((a, b) => new Date(b.lastMessageTime ?? b.createdAt).getTime() - new Date(a.lastMessageTime ?? a.createdAt).getTime()));
+
+    try {
+      const latestCommute = await getMeCommute();
+      setCommuteState(commuteFromApi(latestCommute));
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        setCommuteState(null);
+      } else {
+        console.error('Failed to refresh commute state', error);
+      }
+    }
   }, []);
 
   const loadData = async () => {
@@ -320,12 +389,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [matches, chatRooms, user]);
 
   const declineMatch = useCallback(async (matchId: string) => {
-    const updatedMatches = matches.map(m =>
-      m.id === matchId ? { ...m, status: 'declined' as const } : m
-    );
-    setMatches(updatedMatches);
-    await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
-  }, [matches]);
+    await passSuggestion(matchId);
+    await refreshMatchesAndChats(user);
+  }, [refreshMatchesAndChats, user]);
+
+  const deleteChatRoom = useCallback(async (chatRoomId: string) => {
+    setChatRooms((prev) => prev.filter((room) => room.id !== chatRoomId));
+  }, []);
 
   useEffect(() => {
     if (!user || chatRooms.length === 0) return;
@@ -450,13 +520,135 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const sendMessage = useCallback(async (chatRoomId: string, body: string) => {
     if (!user) return;
 
-    // Optimistic Update
     const tempId = Crypto.randomUUID();
     const optimisticMsg: ChatMessage = {
       id: tempId,
       senderId: user.id,
       senderName: user.name,
       body: body,
+      timestamp: new Date().toISOString(),
+      isSystem: false,
+    };
+
+    setChatRooms(prev => prev.map(r => {
+      if (r.id === chatRoomId) {
+        return {
+          ...r,
+          messages: [...r.messages, optimisticMsg],
+          lastMessage: body,
+          lastMessageTime: optimisticMsg.timestamp,
+        };
+      }
+      return r;
+    }));
+
+    setTimeout(async () => {
+      try {
+        const currentChats = await AsyncStorage.getItem('flock_chats');
+        if (currentChats) {
+          const parsed = JSON.parse(currentChats);
+          const updated = parsed.map((r: any) => {
+            if (r.id === chatRoomId) {
+              return {
+                ...r,
+                messages: [...r.messages, optimisticMsg],
+                lastMessage: body,
+                lastMessageTime: optimisticMsg.timestamp,
+              };
+            }
+            return r;
+          });
+          await AsyncStorage.setItem('flock_chats', JSON.stringify(updated));
+        }
+      } catch (e) {
+        console.error('Failed to update AsyncStorage in sendMessage:', e);
+      }
+    }, 0);
+
+    let ws = wsConnections.current[chatRoomId];
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      let host = 'localhost';
+      if (Constants.expoConfig?.hostUri) {
+        host = Constants.expoConfig.hostUri.split(':')[0];
+      } else if (Platform.OS === 'android') {
+        host = '10.0.2.2';
+      }
+      const wsUrl = `ws://${host}:8000/api/chat/ws/chat/${chatRoomId}`;
+      ws = new WebSocket(wsUrl);
+      wsConnections.current[chatRoomId] = ws;
+
+      ws.onopen = () => {
+        ws!.send(JSON.stringify({
+          sender_id: user.id,
+          sender_name: user.name,
+          body: body,
+        }));
+      };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'message') {
+            const incomingMsg: ChatMessage = {
+              id: data.message.id,
+              senderId: data.message.sender_id,
+              senderName: data.message.sender_name,
+              body: data.message.body,
+              timestamp: data.message.timestamp,
+              isSystem: data.message.is_system,
+            };
+            setChatRooms(prev => prev.map(r => {
+              if (r.id === chatRoomId) {
+                const isDuplicate = r.messages.some(m =>
+                  m.id === incomingMsg.id ||
+                  (m.senderId === incomingMsg.senderId && m.body === incomingMsg.body && Math.abs(new Date(m.timestamp).getTime() - new Date(incomingMsg.timestamp).getTime()) < 2000)
+                );
+                if (isDuplicate) {
+                  return {
+                    ...r,
+                    messages: r.messages.map(m =>
+                      (m.senderId === incomingMsg.senderId && m.body === incomingMsg.body && m.id.length > 30)
+                        ? { ...m, id: incomingMsg.id, timestamp: incomingMsg.timestamp }
+                        : m
+                    ),
+                  };
+                }
+                return {
+                  ...r,
+                  messages: [...r.messages, incomingMsg],
+                  lastMessage: incomingMsg.body,
+                  lastMessageTime: incomingMsg.timestamp,
+                };
+              }
+              return r;
+            }));
+          }
+        } catch (e) {
+          console.error(`Error parsing WebSocket message for room ${chatRoomId}:`, e);
+        }
+      };
+      ws.onerror = () => {};
+      ws.onclose = () => delete wsConnections.current[chatRoomId];
+      return;
+    }
+
+    try {
+      ws.send(JSON.stringify({
+        sender_id: user.id,
+        sender_name: user.name,
+        body: body,
+      }));
+    } catch (e) {
+      console.error(`Error sending message over WebSocket for room ${chatRoomId}:`, e);
+    }
+  }, [user]);
+
+  const injectSystemMessage = useCallback(async (chatRoomId: string, body: string) => {
+    const systemMessage: ChatMessage = {
+      id: Crypto.randomUUID(),
+      senderId: 'system',
+      senderName: 'Flock',
+      body,
       timestamp: new Date().toISOString(),
       isSystem: false,
     };
@@ -669,9 +861,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearPendingReview,
     triggerMatching,
     logout,
-  }), [user, commute, matches, chatRooms, commuteFriends, pendingReview, isLoading, isOnboarded,
-    setUser, setCommute, acceptMatch, declineMatch, sendMessage, submitReview, completeOnboarding,
-    clearPendingReview, triggerMatching, logout]);
+  }), [
+    user,
+    commute,
+    matches,
+    chatRooms,
+    commuteFriends,
+    pendingReview,
+    isLoading,
+    isOnboarded,
+    setUser,
+    setCommute,
+    acceptMatch,
+    declineMatch,
+    sendMessage,
+    injectSystemMessage,
+    deleteChatRoom,
+    submitReview,
+    addCommuteFriend,
+    removeCommuteFriend,
+    getOrCreateChatRoomForFriend,
+    completeOnboarding,
+    clearPendingReview,
+    triggerMatching,
+    joinQueue,
+    leaveQueue,
+    logout,
+  ]);
 
   return (
     <AppContext.Provider value={value}>

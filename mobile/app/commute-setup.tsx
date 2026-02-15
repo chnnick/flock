@@ -35,7 +35,7 @@ export default function CommuteSetupScreen() {
   const [earliestDeparture, setEarliestDeparture] = useState(existingCommute?.earliestDeparture || '7:30 AM');
   const [latestArrival, setLatestArrival] = useState(existingCommute?.latestArrival || '8:45 AM');
   const [transportMode, setTransportMode] = useState<'walk' | 'transit'>(existingCommute?.transportMode || 'walk');
-  const [matchPreference, setMatchPreference] = useState<'group' | 'individual'>(existingCommute?.matchPreference || 'individual');
+  const [matchPreference, setMatchPreference] = useState<'group' | 'individual' | 'both'>(existingCommute?.matchPreference || 'individual');
   const [genderPreference, setGenderPreference] = useState<'any' | 'same'>(existingCommute?.genderPreference || 'any');
   const [showStartResults, setShowStartResults] = useState(false);
   const [showEndResults, setShowEndResults] = useState(false);
@@ -282,6 +282,19 @@ export default function CommuteSetupScreen() {
               />
               <Text style={[styles.optionText, matchPreference === 'group' && styles.optionTextActive]}>
                 Group
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.optionButton, matchPreference === 'both' && styles.optionButtonActive]}
+              onPress={() => { setMatchPreference('both'); Haptics.selectionAsync(); }}
+            >
+              <Ionicons
+                name="git-compare"
+                size={20}
+                color={matchPreference === 'both' ? Colors.textInverse : Colors.textSecondary}
+              />
+              <Text style={[styles.optionText, matchPreference === 'both' && styles.optionTextActive]}>
+                Both
               </Text>
             </Pressable>
           </View>

@@ -8,7 +8,7 @@
     "setup:api": "cd api && python3 -m venv venv && venv/bin/pip install -r requirements.txt",
     "setup:mobile": "npm install",
     "start": "cd mobile && npx expo start",
-    "run:api": "cd api && . venv/bin/activate && uvicorn src.main:app --reload --port 8000",
+    "run:api": "cd api && . venv/bin/activate && uvicorn src.main:app --reload --host 0.0.0.0 --port 8000",
     "run:mobile": "cd mobile && npx expo start",
     "expo:dev": "cd mobile && npx expo start --localhost",
     "expo:start:static:build": "cd mobile && npx expo start --no-dev --minify --localhost",

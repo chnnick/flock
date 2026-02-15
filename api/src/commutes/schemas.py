@@ -35,7 +35,7 @@ class CommuteCreate(BaseModel):
     end: CommutePointPayload
     time_window: TimeWindowPayload
     transport_mode: Literal["walk", "transit"]
-    match_preference: Literal["individual", "group"]
+    match_preference: Literal["individual", "group", "both"]
     group_size_pref: GroupSizePreferencePayload
     gender_preference: Literal["any", "same"] = "any"
     enable_queue_flow: bool = False
@@ -48,7 +48,7 @@ class CommuteUpdate(BaseModel):
     end: CommutePointPayload | None = None
     time_window: TimeWindowPayload | None = None
     transport_mode: Literal["walk", "transit"] | None = None
-    match_preference: Literal["individual", "group"] | None = None
+    match_preference: Literal["individual", "group", "both"] | None = None
     group_size_pref: GroupSizePreferencePayload | None = None
     gender_preference: Literal["any", "same"] | None = None
     enable_queue_flow: bool | None = None
@@ -63,7 +63,7 @@ class CommuteResponse(BaseModel):
     end: CommutePointPayload
     time_window: TimeWindowPayload
     transport_mode: Literal["walk", "transit"]
-    match_preference: Literal["individual", "group"]
+    match_preference: Literal["individual", "group", "both"]
     group_size_pref: GroupSizePreferencePayload
     gender_preference: Literal["any", "same"]
     status: Literal["queued", "paused"]

@@ -2,6 +2,12 @@ import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import Constants from "expo-constants";
 
+type ExpoConstantsWithDevHost = typeof Constants & {
+  expoGoConfig?: {
+    debuggerHost?: string;
+  };
+};
+
 function getPublicEnvVar(name: string): string | undefined {
   const valueFromProcess = process.env[name];
   if (valueFromProcess) {
@@ -14,6 +20,60 @@ function getPublicEnvVar(name: string): string | undefined {
     : undefined;
 }
 
+function ensureTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function isIpv4AddressHost(host: string): boolean {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
+}
+
+function getExpoDevHost(): string | undefined {
+  const hostFromExpoConfig = (Constants.expoConfig as { hostUri?: string } | null)
+    ?.hostUri;
+  if (hostFromExpoConfig) {
+    return hostFromExpoConfig.split(":")[0];
+  }
+
+  const hostFromExpoGo =
+    (Constants as ExpoConstantsWithDevHost).expoGoConfig?.debuggerHost;
+  if (hostFromExpoGo) {
+    return hostFromExpoGo.split(":")[0];
+  }
+
+  return undefined;
+}
+
+function normalizeBaseUrl(input: string): string {
+  const trimmed = input.trim().replace(/\/+$/, "");
+  const rawHost = trimmed
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
+    .split(":")[0];
+  const needsHttp =
+    /^localhost(?::\d+)?$/i.test(trimmed) ||
+    /^127\.0\.0\.1(?::\d+)?$/i.test(trimmed) ||
+    /^0\.0\.0\.0(?::\d+)?$/i.test(trimmed) ||
+    isIpv4AddressHost(rawHost);
+  const withProtocol = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `${needsHttp ? "http" : "https"}://${trimmed}`;
+
+  const url = new URL(withProtocol);
+  if (
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "0.0.0.0"
+  ) {
+    const expoDevHost = getExpoDevHost();
+    if (expoDevHost) {
+      url.hostname = expoDevHost;
+    }
+  }
+
+  return ensureTrailingSlash(url.toString());
+}
+
 /**
  * Gets the base URL for the FastAPI backend (e.g., "http://localhost:8000")
  * @returns {string} The API base URL
@@ -21,18 +81,16 @@ function getPublicEnvVar(name: string): string | undefined {
 export function getApiUrl(): string {
   const explicitBaseUrl = getPublicEnvVar("EXPO_PUBLIC_API_BASE_URL");
   if (explicitBaseUrl) {
-    return explicitBaseUrl.endsWith("/") ? explicitBaseUrl : `${explicitBaseUrl}/`;
+    return normalizeBaseUrl(explicitBaseUrl);
   }
 
-  let host = getPublicEnvVar("EXPO_PUBLIC_DOMAIN");
+  const host = getPublicEnvVar("EXPO_PUBLIC_DOMAIN");
 
   if (!host) {
     throw new Error("Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_DOMAIN");
   }
 
-  let url = new URL(`https://${host}`);
-
-  return url.href;
+  return normalizeBaseUrl(host);
 }
 
 function getAuthHeader(): Record<string, string> {

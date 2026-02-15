@@ -7,3 +7,4 @@ beanie
 pytest
 PyYAML
 pytest>=8.0.0
+google-genai>=1.0.0

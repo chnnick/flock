@@ -58,3 +58,6 @@ __pycache__/
 .vercel
 
 .env
+
+api/venv/
+./venv

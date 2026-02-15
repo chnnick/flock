@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
+import { fetchIntroduction } from '@/lib/chat-api';
 
 export interface UserProfile {
   id: string;
@@ -92,11 +93,12 @@ interface AppContextValue {
   acceptMatch: (matchId: string) => Promise<void>;
   declineMatch: (matchId: string) => Promise<void>;
   sendMessage: (chatRoomId: string, body: string) => Promise<void>;
+  injectSystemMessage: (chatRoomId: string, body: string) => Promise<void>;
   deleteChatRoom: (chatRoomId: string) => Promise<void>;
   submitReview: (matchId: string, enjoyed: boolean) => Promise<void>;
   addCommuteFriend: (profile: MatchProfile) => Promise<void>;
   removeCommuteFriend: (profileId: string) => Promise<void>;
-  getOrCreateChatRoomForFriend: (friend: MatchProfile) => string;
+  getOrCreateChatRoomForFriend: (friend: MatchProfile) => Promise<string>;
   completeOnboarding: () => Promise<void>;
   clearPendingReview: () => void;
   triggerMatching: () => Promise<void>;
@@ -337,11 +339,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatches(updatedMatches);
     await AsyncStorage.setItem('flock_matches', JSON.stringify(updatedMatches));
 
-    const allInterests = [
-      user.interests,
-      ...match.participants.map(p => p.interests),
+    const users = [
+      { name: user.name, occupation: user.occupation, interests: user.interests },
+      ...match.participants.map(p => ({ name: p.name, occupation: p.occupation, interests: p.interests })),
     ];
-    const icebreaker = generateIcebreaker(allInterests);
+    let icebreaker = await fetchIntroduction(users);
+    if (!icebreaker) {
+      const allInterests = [user.interests, ...match.participants.map(p => p.interests)];
+      icebreaker = generateIcebreaker(allInterests);
+    }
 
     const newChatRoom: ChatRoom = {
       id: match.chatRoomId,
@@ -414,7 +420,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setChatRooms(updatedChats);
     await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
 
-    setTimeout(async () => {
+    setTimeout(() => {
       const room = updatedChats.find(r => r.id === chatRoomId);
       if (!room || room.participants.length === 0) return;
       const responder = room.participants[Math.floor(Math.random() * room.participants.length)];
@@ -454,6 +460,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     }, 1500 + Math.random() * 2000);
   }, [chatRooms, user]);
+
+  const injectSystemMessage = useCallback(async (chatRoomId: string, body: string) => {
+    const systemMessage: ChatMessage = {
+      id: Crypto.randomUUID(),
+      senderId: 'system',
+      senderName: 'Flock',
+      body,
+      timestamp: new Date().toISOString(),
+      isSystem: true,
+    };
+    const updatedChats = chatRooms.map(room => {
+      if (room.id === chatRoomId) {
+        return {
+          ...room,
+          messages: [...room.messages, systemMessage],
+          lastMessage: body,
+          lastMessageTime: systemMessage.timestamp,
+        };
+      }
+      return room;
+    });
+    setChatRooms(updatedChats);
+    await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
+  }, [chatRooms]);
 
   const submitReview = useCallback(async (matchId: string, enjoyed: boolean) => {
     const match = matches.find(m => m.id === matchId);
@@ -495,14 +525,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem('flock_friends', JSON.stringify(newFriends));
   }, [commuteFriends]);
 
-  const getOrCreateChatRoomForFriend = useCallback((friend: MatchProfile): string => {
+  const getOrCreateChatRoomForFriend = useCallback(async (friend: MatchProfile): Promise<string> => {
     const existing = chatRooms.find(r =>
       r.type === 'dm' && r.participants.length === 1 && r.participants[0].id === friend.id
     );
     if (existing) return existing.id;
-    const icebreaker = user
-      ? generateIcebreaker([user.interests, friend.interests])
-      : "You're connected! Say hi and plan your next commute together.";
+    let icebreaker: string;
+    if (user) {
+      const intro = await fetchIntroduction([
+        { name: user.name, occupation: user.occupation, interests: user.interests },
+        { name: friend.name, occupation: friend.occupation, interests: friend.interests },
+      ]);
+      icebreaker = intro ?? generateIcebreaker([user.interests, friend.interests]);
+    } else {
+      icebreaker = "You're connected! Say hi and plan your next commute together.";
+    }
     const systemMessage = {
       id: Crypto.randomUUID(),
       senderId: 'system',
@@ -564,6 +601,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     acceptMatch,
     declineMatch,
     sendMessage,
+    injectSystemMessage,
     deleteChatRoom,
     submitReview,
     addCommuteFriend,
@@ -574,7 +612,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     triggerMatching,
     logout,
   }), [user, commute, matches, chatRooms, commuteFriends, pendingReview, isLoading, isOnboarded,
-    setUser, setCommute, acceptMatch, declineMatch, sendMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, getOrCreateChatRoomForFriend, completeOnboarding,
+    setUser, setCommute, acceptMatch, declineMatch, sendMessage, injectSystemMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, getOrCreateChatRoomForFriend, completeOnboarding,
     clearPendingReview, triggerMatching, logout]);
 
   return (

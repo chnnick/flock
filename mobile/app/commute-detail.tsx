@@ -1,4 +1,4 @@
-import { View, Text, Pressable, StyleSheet, ScrollView, Platform } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -111,7 +111,32 @@ function overlapCoordinatesFromRoute(
 export default function CommuteDetailScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const { commute, matches } = useApp();
+  const { commute, matches, endCommute } = useApp();
+
+  const handleEndCommute = () => {
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to end your current commute?');
+      if (confirmed) {
+        endCommute().then(() => router.replace('/'));
+      }
+    } else {
+      Alert.alert(
+        'End Commute',
+        'Are you sure you want to end your current commute?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'End Commute',
+            style: 'destructive',
+            onPress: async () => {
+              await endCommute();
+              router.replace('/');
+            },
+          },
+        ]
+      );
+    }
+  };
 
   if (!commute) {
     return (
@@ -365,6 +390,15 @@ export default function CommuteDetailScreen() {
           </Animated.View>
         )}
 
+        <View style={{ height: 20 }} />
+
+        <Pressable
+          style={({ pressed }) => [styles.endCommuteButton, pressed && { opacity: 0.9 }]}
+          onPress={handleEndCommute}
+        >
+          <Text style={styles.endCommuteText}>End Commute</Text>
+        </Pressable>
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -615,5 +649,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Outfit_400Regular',
     color: Colors.textSecondary,
+  },
+  endCommuteButton: {
+    backgroundColor: Colors.error + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.error + '30',
+  },
+  endCommuteText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.error,
   },
 });

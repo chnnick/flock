@@ -79,6 +79,8 @@ export interface Match {
   chatRoomId?: string;
   createdAt: string;
   maxCapacity?: number;
+  /** True when current user has accepted and we're waiting for others (first accepter) */
+  acceptedByMe?: boolean;
 }
 
 export interface ChatMessage {
@@ -136,6 +138,7 @@ interface AppContextValue {
   joinQueue: () => Promise<void>;
   leaveQueue: () => Promise<void>;
   logout: () => Promise<void>;
+  endCommute: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -266,6 +269,9 @@ function matchFromApi(match: ApiMatchSuggestion, self: UserProfile | null): Matc
   const participants = others.length > 0
     ? others
     : match.participants.map((participant) => participantProfileFromApi(participant, self));
+  const myDecision = match.decisions?.find((d) => d.auth0_id === self?.id);
+  const acceptedByMe = Boolean(myDecision?.accepted_at);
+
   return {
     id: match.id,
     participants,
@@ -281,6 +287,7 @@ function matchFromApi(match: ApiMatchSuggestion, self: UserProfile | null): Matc
     chatRoomId: match.chat_room_id ?? undefined,
     createdAt: match.created_at,
     maxCapacity: match.kind === 'group' ? 4 : undefined,
+    acceptedByMe,
   };
 }
 
@@ -322,7 +329,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const mappedMatches = visibleMatches
       .map((item) => matchFromApi(item, currentUser))
       .sort((a, b) => b.compositeScore - a.compositeScore);
-    setMatches(mappedMatches);
+    // Keep pending matches that aren't in the API result (e.g. first accepter: we accepted, waiting for others)
+    setMatches((prev) => {
+      const fromApiIds = new Set(mappedMatches.map((m) => m.id));
+      const pendingOnlyFromPrev = prev.filter((m) => m.status === 'pending' && !fromApiIds.has(m.id));
+      const merged = [...mappedMatches, ...pendingOnlyFromPrev].sort((a, b) => b.compositeScore - a.compositeScore);
+      return merged;
+    });
 
     try {
       const rooms = await getChats();
@@ -511,12 +524,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refreshMatchesAndChats, user]);
 
   const acceptMatch = useCallback(async (matchId: string) => {
-    await acceptSuggestion(matchId);
+    const updatedSuggestion = await acceptSuggestion(matchId);
+    // Optimistically merge the API response into matches so the UI updates immediately
+    // (refetch can lag or, for the first accepter, the suggestion is no longer in getSuggestions)
+    const updatedMatch = matchFromApi(updatedSuggestion, user);
+    setMatches((prev) => {
+      const without = prev.filter((m) => m.id !== updatedMatch.id);
+      const merged = [...without, updatedMatch].sort((a, b) => b.compositeScore - a.compositeScore);
+      return merged;
+    });
     await refreshMatchesAndChats(user);
   }, [refreshMatchesAndChats, user]);
 
   const declineMatch = useCallback(async (matchId: string) => {
     await passSuggestion(matchId);
+    // Remove from list immediately; refetch would otherwise re-add it via "pending not in API" merge
+    setMatches((prev) => prev.filter((m) => m.id !== matchId));
     await refreshMatchesAndChats(user);
   }, [refreshMatchesAndChats, user]);
 
@@ -636,6 +659,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPendingReview(null);
   }, []);
 
+  const endCommute = useCallback(async () => {
+    setCommuteState(null);
+    await AsyncStorage.removeItem('flock_commute');
+  }, []);
+
   const logout = useCallback(async () => {
     await deleteAuthToken();
     await AsyncStorage.multiRemove(['flock_friends']);
@@ -676,6 +704,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     joinQueue,
     leaveQueue,
     logout,
+    endCommute,
   }), [
     user,
     commute,
@@ -703,6 +732,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     joinQueue,
     leaveQueue,
     logout,
+    endCommute,
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

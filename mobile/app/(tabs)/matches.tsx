@@ -289,20 +289,26 @@ function MatchCard({ match, index, onAccept, onDecline, isLoading }: {
           >
             <Ionicons name="close" size={22} color={Colors.error} />
           </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.acceptButton, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-            onPress={onAccept}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={Colors.textInverse} size="small" />
-            ) : (
-              <>
-                <Ionicons name="checkmark" size={20} color={Colors.textInverse} />
-                <Text style={styles.acceptButtonText}>Accept Match</Text>
-              </>
-            )}
-          </Pressable>
+          {match.acceptedByMe ? (
+            <View style={styles.pendingButton}>
+              <Text style={styles.pendingButtonText}>Pending</Text>
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [styles.acceptButton, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+              onPress={onAccept}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={Colors.textInverse} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark" size={20} color={Colors.textInverse} />
+                  <Text style={styles.acceptButtonText}>Accept Match</Text>
+                </>
+              )}
+            </Pressable>
+          )}
         </View>
       </View>
     </Animated.View>
@@ -394,20 +400,26 @@ function GroupMatchCard({ match, index, onAccept, onDecline, isLoading }: {
           >
             <Ionicons name="close" size={22} color={Colors.error} />
           </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.acceptButton, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-            onPress={onAccept}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={Colors.textInverse} size="small" />
-            ) : (
-              <>
-                <Ionicons name="checkmark" size={20} color={Colors.textInverse} />
-                <Text style={styles.acceptButtonText}>Accept Match</Text>
-              </>
-            )}
-          </Pressable>
+          {match.acceptedByMe ? (
+            <View style={styles.pendingButton}>
+              <Text style={styles.pendingButtonText}>Pending</Text>
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [styles.acceptButton, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+              onPress={onAccept}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={Colors.textInverse} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark" size={20} color={Colors.textInverse} />
+                  <Text style={styles.acceptButtonText}>Accept Match</Text>
+                </>
+              )}
+            </Pressable>
+          )}
         </View>
       </View>
     </Animated.View>
@@ -727,6 +739,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Outfit_600SemiBold',
     color: Colors.textInverse,
+  },
+  pendingButton: {
+    flex: 1,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.borderLight,
+  },
+  pendingButtonText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_600SemiBold',
+    color: Colors.textTertiary,
   },
   activeCard: {
     flexDirection: 'row',

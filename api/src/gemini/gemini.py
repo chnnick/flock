@@ -1,7 +1,11 @@
+import logging
+
 from ..config import settings
 from google import genai
 from google.genai import types
 from typing import List, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiClient:
@@ -33,9 +37,10 @@ Always maintain your friendly, enthusiastic, and welcoming personality.
             config=types.GenerateContentConfig(
                 system_instruction=self.system_instruction,
             ),
-            contents=prompt
+            contents=prompt,
         )
-        return response.text
+        text = getattr(response, "text", None) if response else None
+        return (text or "").strip() or ""
 
     def get_chat_continuation(self, messages: List[Dict]) -> Optional[str]:
         """
@@ -54,40 +59,53 @@ Always maintain your friendly, enthusiastic, and welcoming personality.
         If the conversation is already flowing well, return precisely the word "FLOWING".
         """
         
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            config=types.GenerateContentConfig(
-                system_instruction=self.system_instruction,
-            ),
-            contents=prompt
-        )
-        
-        text = response.text.strip()
+        try:
+            response = self.client.models.generate_content(
+                model="gemini-2.5-flash",
+                config=types.GenerateContentConfig(
+                    system_instruction=self.system_instruction,
+                ),
+                contents=prompt,
+            )
+            text = (getattr(response, "text", None) or "").strip()
+        except Exception:
+            return None
         if "FLOWING" in text.upper() and len(text) < 10:
             return None
-        return text
+        return text or None
 
     def generate_new_questions(self, messages: List[Dict]) -> str:
         """
         Generates a brief question one participant could ask the other(s) based on context.
         Output is framed as the sender directly addressing the recipient(s), not as an intermediary.
+        Returns a generic icebreaker only when the conversation is empty or the model fails.
         """
+        fallback = "What's something you've been meaning to try lately?"
+        if not messages:
+            logger.info("generate_new_questions: no messages, returning fallback")
+            return fallback
+
         chat_history = "\n".join([f"{m.get('name', m['role'])}: {m['content']}" for m in messages])
-        
         prompt = f"""
         Based on this conversation:
         {chat_history}
-        
+
         Write ONE brief question (1–2 short sentences max) that a participant could ask the other(s) to keep the conversation going.
         Write it as if YOU are directly asking them—e.g. "What's your favorite spot in the city?"—not as a moderator or third party.
         Do NOT phrase it as "You could ask..." or address both people at once. Keep it short and natural.
         """
-        
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            config=types.GenerateContentConfig(
-                system_instruction=self.system_instruction,
-            ),
-            contents=prompt
-        )
-        return response.text
+        try:
+            response = self.client.models.generate_content(
+                model="gemini-2.5-flash",
+                config=types.GenerateContentConfig(
+                    system_instruction=self.system_instruction,
+                ),
+                contents=prompt,
+            )
+            text = getattr(response, "text", None) if response else None
+            if text and isinstance(text, str) and text.strip():
+                return text.strip()
+            logger.warning("generate_new_questions: Gemini returned empty or no text (response=%s)", type(response).__name__)
+        except Exception as e:
+            logger.exception("generate_new_questions: Gemini call failed: %s", e)
+        return fallback

@@ -8,6 +8,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp, ChatMessage, MatchProfile } from '@/contexts/AppContext';
 import { fetchNewQuestions, type MessageForApi } from '@/lib/chat-api';
+import { getChatRoom } from '@/lib/backend-api';
 import Avatar from '@/components/Avatar';
 
 export default function ChatDetailScreen() {
@@ -52,39 +53,46 @@ export default function ChatDetailScreen() {
     }));
   }, [user]);
 
+  /** Fetch latest messages from API and request a Gemini prompt (so we never send stale in-memory messages). */
+  const fetchGeminiQuestions = useCallback(async () => {
+    if (!room) return null;
+    let messages: MessageForApi[];
+    try {
+      const fresh = await getChatRoom(room.id);
+      messages = fresh.messages.map(m => ({
+        role: (m.is_system ? 'model' : 'user') as 'model' | 'user',
+        name: m.is_system ? 'Flock' : m.sender_name,
+        content: m.body,
+      }));
+    } catch {
+      messages = roomToApiMessages(room);
+    }
+    return fetchNewQuestions(messages);
+  }, [room, roomToApiMessages]);
+
   const handleAskExcitingQuestion = useCallback(async () => {
     if (!room) return;
     setGeminiLoading(true);
     Haptics.selectionAsync();
-    const messages = roomToApiMessages(room);
-    console.log('loading messages from gemini');
-    const questions = await fetchNewQuestions(messages);
+    const questions = await fetchGeminiQuestions();
     setGeminiLoading(false);
     setShowGeminiModal(false);
-
-    console.log('EXPO_PUBLIC_DOMAIN:', process.env.EXPO_PUBLIC_DOMAIN);
-
-
-    console.log('questions', questions);   
     if (questions) {
       setInputText(questions);
-    } else {
-      console.log('no questions from gemini');
     }
-  }, [room, roomToApiMessages]);
+  }, [room, fetchGeminiQuestions]);
 
   const handleGetConversationBoost = useCallback(async () => {
     if (!room) return;
     setGeminiLoading(true);
     Haptics.selectionAsync();
-    const messages = roomToApiMessages(room);
-    const questions = await fetchNewQuestions(messages);
+    const questions = await fetchGeminiQuestions();
     setGeminiLoading(false);
     setShowGeminiModal(false);
     if (questions) {
       setInputText(questions);
     }
-  }, [room, roomToApiMessages]);
+  }, [room, fetchGeminiQuestions]);
 
   if (!room || !user) {
     return (

@@ -67,10 +67,21 @@ export async function fetchNewQuestions(messages: MessageForApi[]): Promise<stri
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages }),
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { questions: string };
+    const raw = await res.text();
+    if (!res.ok) {
+      console.warn("[fetchNewQuestions] API error:", res.status, url.toString(), raw.slice(0, 200));
+      return null;
+    }
+    let data: { questions?: string };
+    try {
+      data = JSON.parse(raw) as { questions?: string };
+    } catch {
+      console.warn("[fetchNewQuestions] Invalid JSON:", raw.slice(0, 200));
+      return null;
+    }
     return data.questions?.trim() || null;
-  } catch {
+  } catch (e) {
+    console.warn("[fetchNewQuestions] Request failed:", e);
     return null;
   }
 }

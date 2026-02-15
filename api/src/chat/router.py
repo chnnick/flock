@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 from src.auth.dependencies import AuthenticatedUser
 from src.chat.schemas import (
@@ -147,6 +150,8 @@ async def get_continuation(body: ContinuationRequest) -> ContinuationResponse:
 @router.post("/chat/questions", response_model=QuestionsResponse)
 async def generate_questions(body: QuestionsRequest) -> QuestionsResponse:
     """Generate new questions based on conversation context."""
+    n = len(body.messages) if body.messages else 0
+    logger.info("generate_questions: received %s messages", n)
     try:
         client = GeminiClient()
         messages_dict = [
@@ -156,6 +161,7 @@ async def generate_questions(body: QuestionsRequest) -> QuestionsResponse:
         questions = client.generate_new_questions(messages_dict)
         return QuestionsResponse(questions=questions)
     except Exception as e:
+        logger.exception("generate_questions failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate questions: {str(e)}",

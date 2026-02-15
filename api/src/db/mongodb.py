@@ -1,6 +1,6 @@
-import pymongo  
-from pymongo import AsyncMongoClient  
-from beanie import init_beanie  
+import pymongo
+from pymongo import AsyncMongoClient
+from beanie import init_beanie
 from src.config import settings
 from src.db.models.chat_message import ChatMessage
 from src.db.models.chat_room import ChatRoom

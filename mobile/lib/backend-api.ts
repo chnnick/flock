@@ -25,6 +25,10 @@ export async function createMeUser(payload: ApiUserCreate): Promise<ApiUser> {
   return parseJson<ApiUser>(await apiRequest('POST', '/api/users/me', payload));
 }
 
+export async function deleteMeUser(): Promise<ApiUser> {
+  return parseJson<ApiUser>(await apiRequest('DELETE', '/api/users/me'));
+}
+
 export async function patchMeUser(payload: ApiUserUpdate): Promise<ApiUser> {
   return parseJson<ApiUser>(await apiRequest('PATCH', '/api/users/me', payload));
 }

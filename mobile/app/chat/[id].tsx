@@ -8,6 +8,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp, ChatMessage, MatchProfile } from '@/contexts/AppContext';
 import { fetchNewQuestions, type MessageForApi } from '@/lib/chat-api';
+import Avatar from '@/components/Avatar';
 
 export default function ChatDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -103,9 +104,10 @@ export default function ChatDetailScreen() {
   const reversedMessages = [...room.messages].reverse();
   const participantNames = room.participants.map(p => p.name.split(' ')[0]).join(', ');
 
-  const renderMessage = ({ item }: { item: ChatMessage }) => (
-    <MessageBubble message={item} isOwn={item.senderId === user.id} />
-  );
+  const renderMessage = ({ item }: { item: ChatMessage }) => {
+    const sender = room.participants.find(p => p.id === item.senderId);
+    return <MessageBubble message={item} isOwn={item.senderId === user.id} senderAvatar={sender?.avatar} />;
+  };
 
   return (
     <KeyboardAvoidingView
@@ -123,15 +125,15 @@ export default function ChatDetailScreen() {
               <View
                 key={p.id}
                 style={[
-                  styles.headerAvatar,
-                  { backgroundColor: p.avatar, marginLeft: i > 0 ? -8 : 0, zIndex: room.participants.length - i },
+                  styles.headerAvatarContainer,
+                  { marginLeft: i > 0 ? -12 : 0, zIndex: room.participants.length - i },
                 ]}
               >
-                <Text style={styles.headerAvatarText}>{p.name[0]}</Text>
+                <Avatar uri={p.avatar} name={p.name} size={36} />
               </View>
             ))}
             {room.type === 'group' && room.participants.length > 4 && (
-              <View style={[styles.headerAvatar, styles.headerAvatarMore, { marginLeft: -8 }]}>
+              <View style={[styles.headerAvatarMore, { marginLeft: -8 }]}>
                 <Text style={styles.headerAvatarMoreText}>+{room.participants.length - 4}</Text>
               </View>
             )}
@@ -237,9 +239,7 @@ export default function ChatDetailScreen() {
               {room.participants.map(profile => (
                 <View key={profile.id} style={styles.participantCard}>
                   <View style={styles.participantHeader}>
-                    <View style={[styles.participantAvatar, { backgroundColor: profile.avatar }]}>
-                      <Text style={styles.participantAvatarText}>{profile.name[0]}</Text>
-                    </View>
+                    <Avatar uri={profile.avatar} name={profile.name} size={48} />
                     <View style={styles.participantInfo}>
                       <Text style={styles.participantName}>{profile.name}</Text>
                       <Text style={styles.participantOccupation}>{profile.occupation}</Text>
@@ -328,7 +328,7 @@ export default function ChatDetailScreen() {
   );
 }
 
-function MessageBubble({ message, isOwn }: { message: ChatMessage; isOwn: boolean }) {
+function MessageBubble({ message, isOwn, senderAvatar }: { message: ChatMessage; isOwn: boolean; senderAvatar?: string }) {
   if (message.isSystem) {
     return (
       <Animated.View entering={FadeIn.duration(500)} style={styles.systemMessage}>
@@ -340,12 +340,25 @@ function MessageBubble({ message, isOwn }: { message: ChatMessage; isOwn: boolea
     );
   }
 
+  const { matches } = useApp();
+  // Find sender avatar logic would go here if we had access to participants easily, 
+  // but we can assume we might need to pass it down or look it up.
+  // For now, let's use a simpler approach or pass participants to MessageBubble.
+  // But wait, the message object only has senderName and senderId.
+
+  // We can try to look up key info from AppContext if needed, 
+  // OR we can pass the room to MessageBubble.
+
+  // In the render:
+  // const sender = room.participants.find(p => p.id === message.senderId);
+  // but we are inside MessageBubble.
+
   return (
     <Animated.View entering={FadeIn.duration(300)}>
       <View style={[styles.bubbleRow, isOwn && styles.bubbleRowOwn]}>
         {!isOwn && (
-          <View style={styles.bubbleSenderAvatar}>
-            <Text style={styles.bubbleSenderInitial}>{message.senderName[0]}</Text>
+          <View style={styles.bubbleSenderAvatarContainer}>
+            <Avatar uri={senderAvatar} name={message.senderName} size={28} />
           </View>
         )}
         <View style={styles.bubbleContent}>
@@ -399,28 +412,25 @@ const styles = StyleSheet.create({
   headerAvatars: {
     flexDirection: 'row',
   },
-  headerAvatar: {
+  headerAvatarContainer: {
+    borderWidth: 2,
+    borderColor: Colors.card,
+    borderRadius: 12,
+  },
+  headerAvatarMore: {
+    backgroundColor: Colors.surface,
     width: 36,
     height: 36,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: -6,
     borderWidth: 2,
     borderColor: Colors.card,
-  },
-  headerAvatarMore: {
-    backgroundColor: Colors.surface,
   },
   headerAvatarMoreText: {
     fontSize: 12,
     fontFamily: 'Outfit_600SemiBold',
     color: Colors.text,
-  },
-  headerAvatarText: {
-    fontSize: 14,
-    fontFamily: 'Outfit_700Bold',
-    color: Colors.textInverse,
   },
   headerName: {
     fontSize: 17,
@@ -483,18 +493,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     marginBottom: 12,
-  },
-  participantAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  participantAvatarText: {
-    fontSize: 20,
-    fontFamily: 'Outfit_700Bold',
-    color: Colors.textInverse,
   },
   participantInfo: {
     flex: 1,
@@ -624,18 +622,8 @@ const styles = StyleSheet.create({
   bubbleRowOwn: {
     flexDirection: 'row-reverse',
   },
-  bubbleSenderAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
-    backgroundColor: Colors.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bubbleSenderInitial: {
-    fontSize: 12,
-    fontFamily: 'Outfit_700Bold',
-    color: Colors.textInverse,
+  bubbleSenderAvatarContainer: {
+    // No special container styles needed, but keeping for consistency if needed later
   },
   bubbleContent: {
     maxWidth: '75%',

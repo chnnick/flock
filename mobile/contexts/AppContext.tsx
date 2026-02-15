@@ -28,6 +28,7 @@ export interface UserProfile {
   gender: 'male' | 'female' | 'non-binary' | 'prefer-not-to-say';
   interests: string[];
   commuteFriends: string[];
+  avatar?: string;
   createdAt: string;
 }
 
@@ -223,7 +224,7 @@ function participantProfile(participantId: string, self: UserProfile | null): Ma
       occupation: self.occupation,
       gender: self.gender,
       interests: self.interests,
-      avatar: avatarForId(self.id),
+      avatar: self.avatar ?? avatarForId(self.id),
     };
   }
   const suffix = participantId.slice(-4).toUpperCase();

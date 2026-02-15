@@ -1,12 +1,16 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# dependencies
+# ──────────────────────────────────────
+# Dependencies
+# ──────────────────────────────────────
 node_modules/
 
 # root only (thin package.json; real lockfile is mobile/package-lock.json)
 /package-lock.json
 
+# ──────────────────────────────────────
 # Expo / React Native
+# ──────────────────────────────────────
 .expo/
 mobile/.expo/
 mobile/dist/
@@ -21,30 +25,47 @@ mobile/ios/
 *.mobileprovision
 
 # ──────────────────────────────────────
-# IDE
+# Metro / bundler
+# ──────────────────────────────────────
+.metro-health-check*
+.metro-cache/
+
+# ──────────────────────────────────────
+# IDE / editors
 # ──────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Metro
-.metro-health-check*
-
-# debug
+# ──────────────────────────────────────
+# Debug / logs
+# ──────────────────────────────────────
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
+.pnpm-debug.log*
 
-# macOS
+# ──────────────────────────────────────
+# OS
+# ──────────────────────────────────────
 .DS_Store
+Thumbs.db
 *.pem
 
-# local env files
+# ──────────────────────────────────────
+# Env / secrets
+# ──────────────────────────────────────
 .env
 .env*.local
+.env.development
+.env.production
 
+# ──────────────────────────────────────
 # Python
+# ──────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -52,12 +73,31 @@ __pycache__/
 .Python
 *.egg-info/
 .eggs/
+api/venv/
+venv/
+.venv/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
 
-# typescript
+# ──────────────────────────────────────
+# TypeScript / build
+# ──────────────────────────────────────
 *.tsbuildinfo
 .vercel
 
-.env
+# ──────────────────────────────────────
+# Test / coverage (JS)
+# ──────────────────────────────────────
+coverage/
+.nyc_output/
 
-api/venv/
-./venv
+# ──────────────────────────────────────
+# Misc
+# ──────────────────────────────────────
+.cache/
+.eslintcache
+*.orig
+*.bak
+ios/

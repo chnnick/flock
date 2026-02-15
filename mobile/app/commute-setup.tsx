@@ -68,6 +68,8 @@ export default function CommuteSetupScreen() {
       genderPreference,
       status: 'queued',
       createdAt: existingCommute?.createdAt || new Date().toISOString(),
+      routeSegments: [],
+      routeCoordinates: [],
     };
 
     await setCommute(newCommute);

@@ -17,7 +17,9 @@
     "lint": "cd mobile && npx expo lint",
     "lint:fix": "cd mobile && npx expo lint --fix",
     "android": "cd mobile && npx expo run:android",
-    "ios": "cd mobile && npx expo run:ios"
+    "ios": "cd mobile && npx expo run:ios",
+    "ios:fresh": "rm -rf ios && rm -rf node_modules && rm -rf .expo && npm install && npx expo prebuild --platform ios && npx expo run:ios",
+    "ios:rebuild": "rm -rf ios && npx expo prebuild --platform ios && npx expo run:ios"
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
@@ -25,6 +27,8 @@
     "typescript": "~5.9.2"
   },
   "dependencies": {
-    "expo": "^54.0.33"
+    "expo": "^54.0.33",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
   }
 }

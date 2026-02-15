@@ -24,13 +24,11 @@ export default function ProfileScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       try {
         await clearSession(undefined, { customScheme: AUTH0_CUSTOM_SCHEME });
-      } catch {
-        // Ignore if no session or clearSession fails
-      }
-      // Navigate first so we don't stay on profile with user=null (avoids "Unknown" and 401 flashes)
-      router.replace('/');
+      } catch {}
       await logout();
+      router.replace('/(onboarding)');
     };
+    
     if (Platform.OS === 'web') {
       doLogout();
       return;

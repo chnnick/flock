@@ -44,7 +44,7 @@ export default function WelcomeScreen() {
       >
         <Pressable
           style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-          onPress={() => router.push('/(onboarding)/profile')}
+          onPress={() => router.push('/(onboarding)/sign-in')}
         >
           <Text style={styles.buttonText}>Get Started</Text>
           <Ionicons name="arrow-forward" size={20} color={Colors.textInverse} />

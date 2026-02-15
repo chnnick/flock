@@ -11,17 +11,19 @@ export default function IndexScreen() {
   useEffect(() => {
     const decide = async () => {
       if (isLoading) return;
-
+  
       const token = await getAuthToken();
       if (!token) {
-        router.replace('/(onboarding)/sign-in' as Href);
+        // No token — show welcome page (which has "Get Started" → sign-in)
+        router.replace('/(onboarding)');
         return;
       }
-
+  
       if (isOnboarded) {
         router.replace('/(tabs)');
       } else {
-        router.replace('/(onboarding)');
+        // Has token but no profile — go straight to profile setup
+        router.replace('/(onboarding)/profile' as Href);
       }
     };
     decide();

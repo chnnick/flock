@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, WebSocket, WebSocketDisconnect
 
 from src.auth.dependencies import AuthenticatedUser
 from src.chat.schemas import (
@@ -13,11 +14,13 @@ from src.chat.schemas import (
     ContinuationResponse,
     IntroductionRequest,
     IntroductionResponse,
+    MessageCreate,
     QuestionsRequest,
     QuestionsResponse,
     SendMessageRequest,
 )
 from src.chat.service import (
+    chat_service,
     get_room_for_user,
     get_room_last_message,
     list_messages_for_room,
@@ -160,3 +163,111 @@ async def generate_questions(body: QuestionsRequest) -> QuestionsResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate questions: {str(e)}",
         ) from e
+
+
+class ConnectionManager:
+    def __init__(self) -> None:
+        self.active_connections: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, room_id: str) -> None:
+        await websocket.accept()
+        if room_id not in self.active_connections:
+            self.active_connections[room_id] = []
+        self.active_connections[room_id].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, room_id: str) -> None:
+        if room_id in self.active_connections:
+            self.active_connections[room_id].remove(websocket)
+            if not self.active_connections[room_id]:
+                del self.active_connections[room_id]
+
+    async def broadcast(self, message: str, room_id: str) -> None:
+        if room_id in self.active_connections:
+            for connection in self.active_connections[room_id]:
+                await connection.send_text(message)
+
+
+_ws_manager = ConnectionManager()
+_gemini_client = GeminiClient()
+
+
+def _ws_message_to_dict(msg) -> dict:
+    if isinstance(msg, dict):
+        return msg
+    return {
+        "id": str(msg.id),
+        "room_id": msg.chat_room_id,
+        "sender_id": msg.sender_auth0_id or "",
+        "sender_name": msg.sender_name,
+        "body": msg.body,
+        "timestamp": msg.created_at.isoformat(),
+        "is_system": msg.is_system,
+    }
+
+
+@router.websocket("/chat/ws/chat/{room_id}")
+async def websocket_endpoint(websocket: WebSocket, room_id: str) -> None:
+    await _ws_manager.connect(websocket, room_id)
+    try:
+        history = await chat_service.get_recent_messages(room_id)
+        history_data = [_ws_message_to_dict(m) for m in history]
+        await websocket.send_text(json.dumps({"type": "history", "messages": history_data}))
+
+        while True:
+            data = await websocket.receive_text()
+            message_data = json.loads(data)
+            msg_create = MessageCreate(
+                room_id=room_id,
+                sender_id=message_data["sender_id"],
+                sender_name=message_data["sender_name"],
+                body=message_data["body"],
+            )
+            saved_msg = await chat_service.save_message(msg_create)
+
+            broadcast_data = {
+                "type": "message",
+                "message": {
+                    "id": str(saved_msg.id),
+                    "room_id": saved_msg.chat_room_id,
+                    "sender_id": saved_msg.sender_auth0_id or "",
+                    "sender_name": saved_msg.sender_name,
+                    "body": saved_msg.body,
+                    "timestamp": saved_msg.created_at.isoformat(),
+                    "is_system": saved_msg.is_system,
+                },
+            }
+            await _ws_manager.broadcast(json.dumps(broadcast_data), room_id)
+
+            async def gemini_check() -> None:
+                history_for_gemini = await chat_service.get_messages_for_gemini(room_id, limit=5)
+                if len(history_for_gemini) >= 3:
+                    intervention = _gemini_client.get_chat_continuation(history_for_gemini)
+                    if intervention:
+                        gemini_msg = MessageCreate(
+                            room_id=room_id,
+                            sender_id="gemini-bot",
+                            sender_name="Flock Bubbly Guide",
+                            body=intervention,
+                        )
+                        saved_gemini = await chat_service.save_message(gemini_msg)
+                        gemini_broadcast = {
+                            "type": "message",
+                            "message": {
+                                "id": str(saved_gemini.id),
+                                "room_id": saved_gemini.chat_room_id,
+                                "sender_id": saved_gemini.sender_auth0_id or "gemini-bot",
+                                "sender_name": saved_gemini.sender_name,
+                                "body": saved_gemini.body,
+                                "timestamp": saved_gemini.created_at.isoformat(),
+                                "is_system": True,
+                            },
+                        }
+                        await _ws_manager.broadcast(json.dumps(gemini_broadcast), room_id)
+
+            asyncio.create_task(gemini_check())
+
+    except WebSocketDisconnect:
+        _ws_manager.disconnect(websocket, room_id)
+    except Exception as e:
+        _ws_manager.disconnect(websocket, room_id)
+        raise

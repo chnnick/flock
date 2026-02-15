@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.chat.router import router as chats_router
 from src.db.mongodb import init_db
+from src.chat.router import router as chat_router
 from src.commutes.router import router as commutes_router
 from src.matching.router import router as matching_router
 from src.users.router import router as users_router

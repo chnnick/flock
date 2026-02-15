@@ -91,9 +91,9 @@ export default function ProfileScreen() {
                 <Pressable
                   key={friend.id}
                   style={({ pressed }) => [styles.friendCard, pressed && { backgroundColor: Colors.surface }]}
-                  onPress={() => {
+                  onPress={async () => {
                     Haptics.selectionAsync();
-                    const roomId = getOrCreateChatRoomForFriend(friend);
+                    const roomId = await getOrCreateChatRoomForFriend(friend);
                     router.push({ pathname: '/chat/[id]', params: { id: roomId } });
                   }}
                 >

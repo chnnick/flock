@@ -119,11 +119,12 @@ interface AppContextValue {
   acceptMatch: (matchId: string) => Promise<void>;
   declineMatch: (matchId: string) => Promise<void>;
   sendMessage: (chatRoomId: string, body: string) => Promise<void>;
+  injectSystemMessage: (chatRoomId: string, body: string) => Promise<void>;
   deleteChatRoom: (chatRoomId: string) => Promise<void>;
   submitReview: (matchId: string, enjoyed: boolean) => Promise<void>;
   addCommuteFriend: (profile: MatchProfile) => Promise<void>;
   removeCommuteFriend: (profileId: string) => Promise<void>;
-  getOrCreateChatRoomForFriend: (friend: MatchProfile) => string;
+  getOrCreateChatRoomForFriend: (friend: MatchProfile) => Promise<string>;
   completeOnboarding: () => Promise<void>;
   clearPendingReview: () => void;
   triggerMatching: () => Promise<void>;
@@ -506,12 +507,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastMessage: room.last_message ?? undefined,
       lastMessageTime: room.last_message_time ?? undefined,
       createdAt: room.created_at,
-            };
+    };
     setChatRooms((prev) => {
       const withoutCurrent = prev.filter((item) => item.id !== chatRoomId);
       return [mappedRoom, ...withoutCurrent];
     });
   }, [matches, user]);
+
+  const injectSystemMessage = useCallback(async (chatRoomId: string, body: string) => {
+    const systemMessage: ChatMessage = {
+      id: Crypto.randomUUID(),
+      senderId: 'system',
+      senderName: 'Flock',
+      body,
+      timestamp: new Date().toISOString(),
+      isSystem: true,
+    };
+    const updatedChats = chatRooms.map(room => {
+      if (room.id === chatRoomId) {
+        return {
+          ...room,
+          messages: [...room.messages, systemMessage],
+          lastMessage: body,
+          lastMessageTime: systemMessage.timestamp,
+        };
+      }
+      return room;
+    });
+    setChatRooms(updatedChats);
+    await AsyncStorage.setItem('flock_chats', JSON.stringify(updatedChats));
+  }, [chatRooms]);
 
   const submitReview = useCallback(async (matchId: string, enjoyed: boolean) => {
     const match = matches.find((item) => item.id === matchId);
@@ -541,7 +566,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem('flock_friends', JSON.stringify(newFriends));
   }, [commuteFriends]);
 
-  const getOrCreateChatRoomForFriend = useCallback((friend: MatchProfile): string => {
+  const getOrCreateChatRoomForFriend = useCallback(async (friend: MatchProfile): Promise<string> => {
     const existing = chatRooms.find((room) => room.type === 'dm' && room.participants.some((participant) => participant.id === friend.id));
     if (existing) {
       return existing.id;
@@ -591,6 +616,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     acceptMatch,
     declineMatch,
     sendMessage,
+    injectSystemMessage,
     deleteChatRoom,
     submitReview,
     addCommuteFriend,

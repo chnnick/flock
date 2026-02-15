@@ -21,7 +21,7 @@ export default function Avatar({
     fontSize
 }: AvatarProps) {
     const isUrl = uri?.startsWith('http') || uri?.startsWith('data:');
-    const backgroundColor = !isUrl && uri?.startsWith('#') ? uri : color;
+    const backgroundColor = !isUrl && uri?.startsWith('#') ? uri : (isUrl ? 'transparent' : color);
     const initial = name.charAt(0).toUpperCase();
     const textSize = fontSize || Math.round(size * 0.4);
 

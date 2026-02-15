@@ -102,6 +102,7 @@ interface AppContextValue {
   clearPendingReview: () => void;
   triggerMatching: () => Promise<void>;
   logout: () => Promise<void>;
+  endCommute: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -326,8 +327,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const triggerMatching = useCallback(async () => {
     if (!commute || !user) return;
     const newMatches = generateMatches(commute, user);
-    setMatches(newMatches);
-    await AsyncStorage.setItem('flock_matches', JSON.stringify(newMatches));
+
+    setMatches(prevMatches => {
+      // Keep active, completed, and declined matches
+      // Replace only pending matches (or just append? "Find New" implies getting more)
+      // Usually "Find New" adds to the pool or refreshes pending. 
+      // Let's keep non-pending, and assume we replace pending to give a fresh set.
+      const preserved = prevMatches.filter(m => m.status !== 'pending');
+      const updated = [...preserved, ...newMatches];
+      AsyncStorage.setItem('flock_matches', JSON.stringify(updated));
+      return updated;
+    });
   }, [commute, user]);
 
   const acceptMatch = useCallback(async (matchId: string) => {
@@ -539,6 +549,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPendingReview(null);
   }, []);
 
+  const endCommute = useCallback(async () => {
+    setCommuteState(null);
+    await AsyncStorage.removeItem('flock_commute');
+  }, []);
+
   const logout = useCallback(async () => {
     setUserState(null);
     setCommuteState(null);
@@ -576,9 +591,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearPendingReview,
     triggerMatching,
     logout,
+    endCommute,
   }), [user, commute, matches, chatRooms, commuteFriends, pendingReview, isLoading, isOnboarded,
     setUser, setCommute, acceptMatch, declineMatch, sendMessage, deleteChatRoom, submitReview, addCommuteFriend, removeCommuteFriend, getOrCreateChatRoomForFriend, completeOnboarding,
-    clearPendingReview, triggerMatching, logout]);
+    clearPendingReview, triggerMatching, logout, endCommute]);
 
   return (
     <AppContext.Provider value={value}>

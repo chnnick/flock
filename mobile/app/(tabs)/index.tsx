@@ -22,7 +22,7 @@ export default function HomeScreen() {
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { user, commute, matches, triggerMatching } = useApp();
   const [showHowFlockWorks, setShowHowFlockWorks] = useState(false);
-  const activeMatches = matches.filter(m => m.status === 'active');
+  const activeMatches = matches.filter(m => m.status === 'active' || m.status === 'completed').slice(0, 3);
   const pendingMatches = matches.filter(m => m.status === 'pending');
 
   const pulse = useSharedValue(1);
@@ -68,9 +68,14 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
       >
-        <View style={styles.greeting}>
-          <Text style={styles.hello}>Hello, {user?.name?.split(' ')[0] || 'there'}</Text>
-          <Text style={styles.greetingSub}>Ready for your commute?</Text>
+        <View style={styles.greetingHeader}>
+          <Pressable onPress={() => router.push('/(tabs)/profile')}>
+            <Avatar uri={user?.avatar} name={user?.name} size={54} />
+          </Pressable>
+          <View style={styles.greetingText}>
+            <Text style={styles.hello}>Hello, {user?.name?.split(' ')[0] || 'there'}!</Text>
+            <Text style={styles.greetingSub}>Ready for your commute?</Text>
+          </View>
         </View>
 
         {commute ? (
@@ -176,7 +181,7 @@ export default function HomeScreen() {
           </Animated.View>
         )}
 
-        {activeMatches.length > 0 && (
+        {activeMatches.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Active Commutes</Text>
             {activeMatches.map(match => (
@@ -204,6 +209,37 @@ export default function HomeScreen() {
               </Pressable>
             ))}
           </View>
+        ) : (
+          pendingMatches.length > 0 && commute && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Potential Matches</Text>
+              {pendingMatches.slice(0, 3).map(match => (
+                <Pressable
+                  key={match.id}
+                  style={({ pressed }) => [styles.activeMatchCard, pressed && { opacity: 0.9 }]}
+                  onPress={() => router.push('/(tabs)/matches')}
+                >
+                  <View style={styles.matchAvatarRow}>
+                    {match.participants.slice(0, 3).map((p, i) => (
+                      <View key={p.id} style={[styles.miniAvatarContainer, { marginLeft: i > 0 ? -12 : 0, zIndex: 4 - i }]}>
+                        <Avatar uri={p.avatar} name={p.name} size={36} />
+                      </View>
+                    ))}
+                  </View>
+                  <View style={styles.matchInfo}>
+                    <Text style={styles.matchName}>
+                      {match.participants[0].name.split(' ')[0]}
+                      {match.participants.length > 1 ? ` & ${match.participants.length - 1} others` : ''}
+                    </Text>
+                    <Text style={styles.matchRoute}>
+                      {match.overlapScore > 0.8 ? 'High Match' : 'Good Match'} • {match.estimatedTime}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+                </Pressable>
+              ))}
+            </View>
+          )
         )}
 
 
@@ -336,8 +372,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
   },
-  greeting: {
+  greetingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
     marginBottom: 24,
+  },
+  greetingText: {
+    flex: 1,
   },
   hello: {
     fontSize: 30,

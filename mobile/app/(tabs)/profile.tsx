@@ -1,5 +1,6 @@
-import { Image } from 'expo-image';
+// import { Image } from 'expo-image';
 import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Alert } from 'react-native';
+import Avatar from '@/components/Avatar';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,17 +49,7 @@ export default function ProfileScreen() {
       >
         <View style={styles.profileHeader}>
           <View style={styles.avatarLarge}>
-            {user?.avatar ? (
-              <Image
-                source={{ uri: user.avatar }}
-                style={styles.avatarImage}
-                contentFit="cover"
-                transition={200}
-                onError={(e) => console.log('Profile Avatar Load Error:', e.error)}
-              />
-            ) : (
-              <Text style={styles.avatarLargeText}>{user?.name?.[0] || '?'}</Text>
-            )}
+            <Avatar uri={user?.avatar} name={user?.name} size={88} fontSize={36} />
           </View>
           <Text style={styles.profileName}>{user?.name || 'Unknown'}</Text>
           <Text style={styles.profileOccupation}>{user?.occupation || ''}</Text>
@@ -108,8 +99,8 @@ export default function ProfileScreen() {
                     router.push({ pathname: '/chat/[id]', params: { id: roomId } });
                   }}
                 >
-                  <View style={[styles.friendAvatar, { backgroundColor: friend.avatar }]}>
-                    <Text style={styles.friendAvatarText}>{friend.name[0]}</Text>
+                  <View style={styles.friendAvatarContainer}>
+                    <Avatar uri={friend.avatar} name={friend.name} size={44} />
                   </View>
                   <View style={styles.friendInfo}>
                     <Text style={styles.friendName}>{friend.name}</Text>
@@ -205,24 +196,21 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   avatarLarge: {
-    width: 88,
-    height: 88,
-    borderRadius: 30,
-    backgroundColor: Colors.primary,
+    // width/height handled by Avatar mostly, but this container aligns it
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
-    overflow: 'hidden',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
   },
   avatarLargeText: {
     fontSize: 36,
     fontFamily: 'Outfit_700Bold',
     color: Colors.textInverse,
   },
+  // ... other styles ...
+  friendAvatarContainer: {
+    // Just a wrapper if needed, or we can use Avatar directly.
+  },
+  // Removed friendAvatar, friendAvatarText
   profileName: {
     fontSize: 26,
     fontFamily: 'Outfit_700Bold',

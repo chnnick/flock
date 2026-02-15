@@ -8,6 +8,7 @@ import { Swipeable, RectButton } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp, ChatRoom } from '@/contexts/AppContext';
+import Avatar from '@/components/Avatar';
 
 export default function ChatsScreen() {
   const insets = useSafeAreaInsets();
@@ -111,39 +112,38 @@ function ChatRoomItem({ room, index, onDelete }: { room: ChatRoom; index: number
           onPress={() => router.push({ pathname: '/chat/[id]', params: { id: room.id } })}
           underlayColor={Colors.surface}
         >
-        <View style={styles.avatarRow}>
-          {room.participants.slice(0, 2).map((p, i) => (
-            <View
-              key={p.id}
-              style={[
-                styles.chatAvatar,
-                { backgroundColor: p.avatar },
-                i > 0 && { marginLeft: -12 },
-              ]}
-            >
-              <Text style={styles.chatAvatarText}>{p.name[0]}</Text>
-            </View>
-          ))}
-        </View>
+          <View style={styles.avatarRow}>
+            {room.participants.slice(0, 2).map((p, i) => (
+              <View
+                key={p.id}
+                style={[
+                  styles.chatAvatarContainer,
+                  i > 0 && { marginLeft: -12, zIndex: 0 },
+                ]}
+              >
+                <Avatar uri={p.avatar} name={p.name} size={50} />
+              </View>
+            ))}
+          </View>
 
-        <View style={styles.chatInfo}>
-          <Text style={styles.chatName} numberOfLines={1}>
-            {room.participants.map(p => p.name.split(' ')[0]).join(', ')}
-          </Text>
-          <Text style={styles.chatLastMessage} numberOfLines={1}>
-            {room.lastMessage || 'Start the conversation!'}
-          </Text>
-        </View>
+          <View style={styles.chatInfo}>
+            <Text style={styles.chatName} numberOfLines={1}>
+              {room.participants.map(p => p.name.split(' ')[0]).join(', ')}
+            </Text>
+            <Text style={styles.chatLastMessage} numberOfLines={1}>
+              {room.lastMessage || 'Start the conversation!'}
+            </Text>
+          </View>
 
-        <View style={styles.chatMeta}>
-          {!isSwipeOpen && <Text style={styles.chatTime}>{formatTime(room.lastMessageTime)}</Text>}
-          {unreadCount > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>{unreadCount}</Text>
-            </View>
-          )}
-        </View>
-      </RectButton>
+          <View style={styles.chatMeta}>
+            {!isSwipeOpen && <Text style={styles.chatTime}>{formatTime(room.lastMessageTime)}</Text>}
+            {unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadText}>{unreadCount}</Text>
+              </View>
+            )}
+          </View>
+        </RectButton>
       </Swipeable>
     </Animated2.View>
   );
@@ -198,20 +198,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  chatAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
+  chatAvatarContainer: {
+    // width/height handled by Avatar size
+    // borderRadius handled by Avatar
     borderWidth: 2,
     borderColor: Colors.background,
+    borderRadius: 25,
   },
-  chatAvatarText: {
-    fontSize: 20,
-    fontFamily: 'Outfit_700Bold',
-    color: Colors.textInverse,
-  },
+  // chatAvatarText removed
   chatInfo: {
     flex: 1,
   },

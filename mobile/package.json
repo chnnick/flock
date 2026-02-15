@@ -8,10 +8,12 @@
     "expo:start:static:build": "npx expo start --no-dev --minify --localhost",
     "expo:static:build": "node scripts/build.js",
     "start": "npx expo start",
+    "fresh-start:ios": "rm -rf ios && rm -rf android && npx expo prebuild --platform ios && npx expo run:ios",
+    "fresh-start:android": "rm -rf ios && rm -rf android && npx expo prebuild --platform android && npx expo run:android",
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
-    "android": "expo run:android",
-    "ios": "expo run:ios"
+    "android": "npx expo run:android",
+    "ios": "npx expo run:ios"
   },
   "dependencies": {
     "@expo-google-fonts/outfit": "^0.4.3",
@@ -58,6 +60,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
+    "dotenv": "^16.4.5",
     "@babel/core": "^7.25.2",
     "@expo/ngrok": "^4.1.0",
     "@types/react": "~19.1.10",

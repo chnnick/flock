@@ -4,10 +4,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
+import { useState } from 'react';
 import Colors from '@/constants/colors';
 import { useApp, Match, Commute } from '@/contexts/AppContext';
 import Avatar from '@/components/Avatar';
-import { useState } from 'react';
 
 function isGroupMatch(match: Match): boolean {
   return match.participants.length > 1 || (match.maxCapacity != null && match.maxCapacity > 1);
@@ -26,6 +26,10 @@ function queueIconForPreference(preference: Commute['matchPreference']): 'person
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  return <MatchesView topInset={topInset} />;
+}
+
+export function MatchesView({ topInset, onBack }: { topInset: number; onBack?: () => void }) {
   const { matches, commute, acceptMatch, declineMatch, refreshMatches, joinQueue, leaveQueue } = useApp();
   const [loadingMatch, setLoadingMatch] = useState<string | null>(null);
   const [isQueuing, setIsQueuing] = useState(false);
@@ -73,9 +77,22 @@ export default function MatchesScreen() {
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}>
+        {onBack ? (
+          <Pressable
+            onPress={onBack}
+            hitSlop={8}
+            style={({ pressed }) => [styles.headerBackButton, pressed && { opacity: 0.6 }]}
+          >
+            <Ionicons name="chevron-back" size={24} color={Colors.text} />
+          </Pressable>
+        ) : null}
         <Text style={styles.headerTitle}>Matches</Text>
         {commute && (
-          <Pressable onPress={handleRefresh} hitSlop={8}>
+          <Pressable
+            onPress={handleRefresh}
+            hitSlop={8}
+            style={({ pressed }) => [styles.headerRefreshButton, pressed && styles.headerRefreshButtonPressed]}
+          >
             <Ionicons name="refresh" size={24} color={Colors.primary} />
           </Pressable>
         )}
@@ -177,7 +194,10 @@ export default function MatchesScreen() {
                 <Text style={styles.emptyText}>
                   Use Find Matches on Home to run matching.
                 </Text>
-                <Pressable style={styles.emptyButton} onPress={handleRefresh}>
+                <Pressable
+                  style={({ pressed }) => [styles.emptyButton, pressed && styles.emptyButtonPressed]}
+                  onPress={handleRefresh}
+                >
                   <Text style={styles.emptyButtonText}>Refresh</Text>
                 </Pressable>
               </View>
@@ -501,9 +521,21 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   headerTitle: {
+    flex: 1,
     fontSize: 30,
     fontFamily: 'Outfit_700Bold',
     color: Colors.text,
+  },
+  headerBackButton: {
+    padding: 4,
+    marginRight: 4,
+  },
+  headerRefreshButton: {
+    padding: 4,
+  },
+  headerRefreshButtonPressed: {
+    opacity: 0.6,
+    transform: [{ scale: 0.92 }],
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -834,6 +866,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 28,
     paddingVertical: 14,
+  },
+  emptyButtonPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
   },
   emptyButtonText: {
     fontSize: 16,

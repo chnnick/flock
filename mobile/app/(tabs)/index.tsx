@@ -9,10 +9,12 @@ import Animated, {
   FadeInDown,
   useSharedValue,
   useAnimatedStyle,
+  withDelay,
   withRepeat,
   withSequence,
-  withTiming
+  withTiming,
 } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import Avatar from '@/components/Avatar';
@@ -42,11 +44,93 @@ function minuteToDisplay(minute: number): string {
   return `${hours12}:${mins.toString().padStart(2, '0')} ${ampm}`;
 }
 
+const FEATHER_W = 12;
+const FEATHER_H = 22;
+
+function FeatherShape({ color }: { color: string }) {
+  return (
+    <Svg width={FEATHER_W} height={FEATHER_H} viewBox={`0 0 ${FEATHER_W} ${FEATHER_H}`} style={{ position: 'absolute' }}>
+      <Path
+        d="M 6 0 Q 10 6 8 11 Q 6 16 6 22 Q 6 16 4 11 Q 2 6 6 0"
+        fill={color}
+        fillOpacity={0.95}
+      />
+    </Svg>
+  );
+}
+
+function FeatherBurst() {
+  const y1 = useSharedValue(0);
+  const y2 = useSharedValue(0);
+  const y3 = useSharedValue(0);
+  const o1 = useSharedValue(0.9);
+  const o2 = useSharedValue(0.9);
+  const o3 = useSharedValue(0.9);
+  const r1 = useSharedValue(0);
+  const r2 = useSharedValue(0);
+  const r3 = useSharedValue(0);
+
+  useEffect(() => {
+    const dur = 550;
+    y1.value = withTiming(-56, { duration: dur });
+    y2.value = withDelay(40, withTiming(-52, { duration: dur }));
+    y3.value = withDelay(80, withTiming(-58, { duration: dur }));
+    o1.value = withTiming(0, { duration: dur });
+    o2.value = withDelay(40, withTiming(0, { duration: dur }));
+    o3.value = withDelay(80, withTiming(0, { duration: dur }));
+    r1.value = withTiming(-18, { duration: dur });
+    r2.value = withDelay(40, withTiming(12, { duration: dur }));
+    r3.value = withDelay(80, withTiming(-8, { duration: dur }));
+  }, []);
+
+  const style1 = useAnimatedStyle(() => ({
+    transform: [{ translateY: y1.value }, { rotate: r1.value + 'deg' }],
+    opacity: o1.value,
+  }));
+  const style2 = useAnimatedStyle(() => ({
+    transform: [{ translateY: y2.value }, { rotate: r2.value + 'deg' }],
+    opacity: o2.value,
+  }));
+  const style3 = useAnimatedStyle(() => ({
+    transform: [{ translateY: y3.value }, { rotate: r3.value + 'deg' }],
+    opacity: o3.value,
+  }));
+
+  const featherColor = 'rgba(255,255,255,0.85)';
+  return (
+    <View style={featherBurstStyles.container} pointerEvents="none">
+      <Animated.View style={[featherBurstStyles.feather, style1]}>
+        <FeatherShape color={featherColor} />
+      </Animated.View>
+      <Animated.View style={[featherBurstStyles.feather, style2]}>
+        <FeatherShape color={featherColor} />
+      </Animated.View>
+      <Animated.View style={[featherBurstStyles.feather, style3]}>
+        <FeatherShape color={featherColor} />
+      </Animated.View>
+    </View>
+  );
+}
+
+const featherBurstStyles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feather: {
+    position: 'absolute',
+    width: FEATHER_W,
+    height: FEATHER_H,
+  },
+});
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const { user, commute, matches, triggerMatching } = useApp();
   const [showHowFlockWorks, setShowHowFlockWorks] = useState(false);
+  const [featherBurstKey, setFeatherBurstKey] = useState(0);
   const activeMatches = matches.filter(m => m.status === 'active' || m.status === 'completed').slice(0, 3);
   const pendingMatches = matches.filter(m => m.status === 'pending');
   const displayedEndTime = commute?.otpTotalDurationMinutes != null
@@ -62,6 +146,7 @@ export default function HomeScreen() {
     : 'people-outline';
 
   const pulse = useSharedValue(1);
+  const findButtonScale = useSharedValue(1);
 
   useEffect(() => {
     pulse.value = withRepeat(
@@ -78,10 +163,18 @@ export default function HomeScreen() {
     transform: [{ scale: pulse.value }],
   }));
 
-  const handleFindMatches = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await triggerMatching();
-    router.push('/(tabs)/matches');
+  const findButtonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: findButtonScale.value }],
+  }));
+
+  const handleFindMatches = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFeatherBurstKey(k => k + 1);
+    findButtonScale.value = withSequence(
+      withTiming(0.96, { duration: 80 }),
+      withTiming(1, { duration: 180 })
+    );
+    triggerMatching();
   };
 
   const handleHelpPress = () => {
@@ -189,10 +282,15 @@ export default function HomeScreen() {
               style={({ pressed }) => [styles.findButton, pressed && styles.findButtonPressed]}
               onPress={handleFindMatches}
             >
-              <Ionicons name="search" size={22} color={Colors.textInverse} />
-              <Text style={styles.findButtonText}>
-                {pendingMatches.length > 0 ? 'Find New Matches' : 'Find Commute Matches'}
-              </Text>
+              <View style={styles.findButtonContent}>
+                <Animated.View style={[styles.findButtonInner, findButtonAnimatedStyle]}>
+                  <Ionicons name="search" size={22} color={Colors.textInverse} />
+                  <Text style={styles.findButtonText}>
+                    Find Your Flock
+                  </Text>
+                </Animated.View>
+                <FeatherBurst key={featherBurstKey} />
+              </View>
             </Pressable>
           </Animated.View>
         ) : (
@@ -538,8 +636,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
     marginBottom: 8,
+    overflow: 'visible',
+  },
+  findButtonContent: {
+    position: 'relative',
+    overflow: 'visible',
+  },
+  findButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
   findButtonPressed: {
     opacity: 0.9,

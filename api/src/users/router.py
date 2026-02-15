@@ -1,9 +1,8 @@
 from fastapi import APIRouter, HTTPException, status
 
 from src.auth.dependencies import AuthenticatedUser
-from src.auth.schemas import TokenClaims
 from src.users.schemas import UserCreate, UserResponse, UserUpdate
-from src.users.service import create_or_update, get_by_auth0_id, update_me
+from src.users.service import create_or_update, get_by_auth0_id, update_me, delete_by_auth0_id
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -48,8 +47,7 @@ async def patch_me(claims: AuthenticatedUser, body: UserUpdate) -> UserResponse:
 
 @router.delete("/me", response_model=UserResponse)
 async def delete_me(claims: AuthenticatedUser) -> UserResponse:
-    """Delete current user profile."""
-    user = await delete_me(claims.user_id)
+    user = await delete_by_auth0_id(claims.user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return _to_response(user)

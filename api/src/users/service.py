@@ -40,3 +40,10 @@ async def update_me(auth0_id: str, payload: UserUpdate) -> User | None:
         user.interests = payload.interests
     await user.save()
     return user
+
+async def delete_by_auth0_id(auth0_id: str) -> User | None:
+    user = await get_by_auth0_id(auth0_id)
+    if not user:
+        return None
+    await user.delete()
+    return user

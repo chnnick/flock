@@ -38,7 +38,8 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      ["react-native-auth0", {"domain": "dev-yi531vxrxvjr8z4u.us.auth0.com", "customScheme": "flock"}]
     ],
     "experiments": {
       "typedRoutes": true,

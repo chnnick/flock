@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
+import { deleteAuthToken } from '@/lib/query-client';
 
 export interface UserProfile {
   id: string;
@@ -544,6 +545,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCommuteFriends([]);
     setIsOnboarded(false);
     setPendingReview(null);
+    await deleteAuthToken();
     await AsyncStorage.multiRemove([
       'flock_user', 'flock_commute', 'flock_matches',
       'flock_chats', 'flock_friends', 'flock_onboarded',

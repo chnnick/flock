@@ -1,20 +1,24 @@
 import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import * as SecureStore from 'expo-secure-store';
 
-/**
- * Gets the base URL for the FastAPI backend (e.g., "http://localhost:8000")
- * @returns {string} The API base URL
- */
+// Token management
+export const getAuthToken = async () => {
+  return await SecureStore.getItemAsync('auth_token');
+};
+
+export const setAuthToken = async (token: string) => {
+  await SecureStore.setItemAsync('auth_token', token);
+};
+
+export const deleteAuthToken = async () => {
+  await SecureStore.deleteItemAsync('auth_token');
+};
+
 export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
-
-  if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
-  }
-
-  let url = new URL(`https://${host}`);
-
-  return url.href;
+  if (!host) throw new Error("EXPO_PUBLIC_DOMAIN is not set") 
+  return new URL(`https://${host}`).href;
 }
 
 async function throwIfResNotOk(res: Response) {
@@ -27,14 +31,18 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   route: string,
-  data?: unknown | undefined,
+  data?: unknown,
 ): Promise<Response> {
   const baseUrl = getApiUrl();
   const url = new URL(route, baseUrl);
+  const token = await getAuthToken();
 
   const res = await fetch(url.toString(), {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(data ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -51,30 +59,31 @@ export const getQueryFn: <T>(options: {
   async ({ queryKey }) => {
     const baseUrl = getApiUrl();
     const url = new URL(queryKey.join("/") as string, baseUrl);
+    const token = await getAuthToken();
 
     const res = await fetch(url.toString(), {
       credentials: "include",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
     }
 
-    await throwIfResNotOk(res);
-    return await res.json();
+  await throwIfResNotOk(res);
+  return await res.json();
   };
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,
       retry: false,
     },
-    mutations: {
-      retry: false,
-    },
+    mutations: { retry: false },
   },
 });

@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView, Platform, TextInput } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, TextInput, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as Crypto from 'expo-crypto';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp, UserProfile } from '@/contexts/AppContext';
+import { apiRequest } from '@/lib/query-client';
+import type { ApiUser } from '@/lib/api-types';
 
 const INTEREST_TAGS = [
   'Reading', 'Podcasts', 'Running', 'Cooking', 'Photography',
@@ -50,20 +51,54 @@ export default function InterestsScreen() {
     setIsSubmitting(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    const user: UserProfile = {
-      id: Crypto.randomUUID(),
-      name: params.name || '',
-      occupation: params.occupation || '',
-      gender: (params.gender || 'prefer-not-to-say') as UserProfile['gender'],
-      interests: selected,
-      commuteFriends: [],
-      createdAt: new Date().toISOString(),
-    };
+    const name = params.name?.trim() ?? '';
+    const occupation = params.occupation?.trim() ?? '';
+    const gender = (params.gender ?? 'prefer-not-to-say') as UserProfile['gender'];
 
-    await setUser(user);
-    await completeOnboarding();
-    router.dismissAll();
-    router.replace('/(tabs)');
+    try {
+      const res = await apiRequest('POST', '/api/users/me', {
+        name,
+        occupation,
+        gender,
+        interests: selected,
+      });
+      const data = (await res.json()) as ApiUser;
+      const user: UserProfile = {
+        id: data.id,
+        name: data.name,
+        occupation: data.occupation,
+        gender: data.gender as UserProfile['gender'],
+        interests: data.interests,
+        commuteFriends: [],
+        createdAt: data.created_at,
+      };
+      await setUser(user);
+      await completeOnboarding();
+      router.dismissAll();
+      router.replace('/(tabs)');
+    } catch (e) {
+      setIsSubmitting(false);
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('[Interests] POST /api/users/me failed:', message);
+      const isUnauthorized = message.includes('401');
+      if (isUnauthorized) {
+        if (Platform.OS !== 'web') {
+          Alert.alert('Session expired', 'Please sign in again.', [
+            { text: 'OK', onPress: () => router.replace('/(onboarding)/sign-in') },
+          ]);
+        } else {
+          router.replace('/(onboarding)/sign-in');
+        }
+      } else {
+        const detail = message.replace(/^\d+\s*:\s*/i, '').slice(0, 200);
+        Alert.alert(
+          'Could not save profile',
+          Platform.OS === 'web' || __DEV__
+            ? detail || 'Check console and EXPO_PUBLIC_DOMAIN, then try again.'
+            : 'Something went wrong. Try again.'
+        );
+      }
+    }
   };
 
   return (

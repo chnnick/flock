@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     AUTH0_DOMAIN: str | None = None
     AUTH0_AUDIENCE: str | None = None
+    AUTH0_MGMT_CLIENT_ID: str | None = None
+    AUTH0_MGMT_CLIENT_SECRET: str | None = None
     MONGO_URI: str
     GEMINI_API_KEY: str
     DEV_AUTH_BYPASS: bool = False

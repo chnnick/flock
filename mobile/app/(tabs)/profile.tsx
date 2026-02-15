@@ -9,6 +9,7 @@ import { useAuth0 } from 'react-native-auth0';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { deleteMeUser } from '@/lib/backend-api';
 
 const AUTH0_CUSTOM_SCHEME = process.env.EXPO_PUBLIC_AUTH0_CUSTOM_SCHEME ?? 'flock';
 
@@ -47,9 +48,50 @@ export default function ProfileScreen() {
       ],
     );
   };
+  const handleDeleteAccount = () => {
+    const doDelete = async () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      try {
+        // Backend deletes from Auth0 + MongoDB
+        await deleteMeUser();
+      } catch {}
+      try {
+        await clearSession(undefined, { customScheme: AUTH0_CUSTOM_SCHEME });
+      } catch {}
+      await logout();
+      router.replace('/(onboarding)');
+    };
+  
+    if (Platform.OS === 'web') {
+      doDelete();
+      return;
+    }
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all data. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: doDelete,
+        },
+      ],
+    );
+  };
 
   return (
-    <View style={[styles.container, { paddingTop: topInset }]}>
+    <View style={styles.container}>
+      <View style={[styles.headerRow, { paddingTop: topInset }]}>
+        <View style={styles.headerSpacer} />
+        <Pressable
+          style={({ pressed }) => [styles.headerIconButton, pressed && { opacity: 0.7 }]}
+          onPress={handleLogout}
+          accessibilityLabel="Sign out"
+        >
+          <Ionicons name="log-out-outline" size={24} color={Colors.textSecondary} />
+        </Pressable>
+      </View>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -173,14 +215,13 @@ export default function ProfileScreen() {
           </Pressable>
 
           <Pressable
-            style={({ pressed }) => [styles.settingsItem, pressed && { backgroundColor: Colors.surface }]}
-            onPress={handleLogout}
+            style={({ pressed }) => [styles.settingsItem, styles.settingsItemDestructive, pressed && { backgroundColor: Colors.error + '08' }]}
+            onPress={handleDeleteAccount}
           >
             <View style={[styles.settingsIcon, { backgroundColor: Colors.error + '15' }]}>
-              <Ionicons name="log-out-outline" size={20} color={Colors.error} />
+              <Ionicons name="trash-outline" size={20} color={Colors.error} />
             </View>
-            <Text style={[styles.settingsText, { color: Colors.error }]}>Sign Out</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+            <Text style={[styles.settingsText, { color: Colors.error }]}>Delete Account</Text>
           </Pressable>
         </Animated.View>
 
@@ -194,6 +235,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  headerSpacer: {
+    flex: 1,
+  },
+  headerIconButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -339,6 +396,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
+  },
+  settingsItemDestructive: {
+    borderBottomWidth: 0,
   },
   settingsIcon: {
     width: 40,

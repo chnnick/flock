@@ -32,7 +32,7 @@
 | **Mobile** | React Native, Expo, TypeScript |
 | **Backend** | FastAPI (Python), MongoDB (Beanie) |
 | **Auth** | **Auth0** — secure login, JWT validation, and user identity across API and app |
-| **Maps & routing** | OpenStreetMap, custom transit rendering |
+| **Matching, Maps, routing** | Custom matching algorithm, OpenStreetMap mapping, custom transit rendering |
 | **AI** | Google Gemini (intros, conversation boost, icebreaker questions) |
 
 **Auth0** is used for sign-in and API protection: the app authenticates with Auth0, and the FastAPI backend validates JWTs and uses the token claims for user-scoped data (commutes, matches, chat rooms).

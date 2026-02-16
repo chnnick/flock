@@ -1,33 +1,46 @@
 # Flock
 
-Two-folder layout:
+**Find your flock.** A mobile app that connects commuters through matchmaking and chat—whether you're looking for shared hobbies or a commute buddy.
 
-- **`api/`** — Backend (FastAPI, Python). Auth (Auth0), MongoDB, user APIs.
-- **`mobile/`** — Frontend (Expo / React Native). App code and build scripts.
+📺 **[Watch the demo](https://www.youtube.com/watch?v=uwQoZG70WvU&feature=youtu.be)** · 📋 **[Devpost](https://devpost.com/software/flock-b6vmnp/)**
 
-## Setup
+---
 
-From repo root (one-time after clone):
+## Use cases
+
+- **Commute matching** — Get matched with people on your route (transit or walking) by time window and preferences.
+- **Group or 1:1** — Choose individual buddies or group commutes; queue-based or suggestion flow.
+- **Chat & intros** — In-app chat with AI-generated introductions (Gemini) and conversation prompts.
+- **Stay connected** — Add commute friends and keep in touch after the ride.
+
+---
+
+## Tech stack
+
+| Layer | Tech |
+|-------|------|
+| **Mobile** | React Native, Expo, TypeScript |
+| **Backend** | FastAPI (Python), MongoDB (Beanie) |
+| **Auth** | **Auth0** — secure login, JWT validation, and user identity across API and app |
+| **Maps & routing** | OpenStreetMap, custom transit rendering |
+| **AI** | Google Gemini (intros, conversation boost, icebreaker questions) |
+
+**Auth0** is used for sign-in and API protection: the app authenticates with Auth0, and the FastAPI backend validates JWTs and uses the token claims for user-scoped data (commutes, matches, chat rooms).
+
+---
+
+## Project layout
+
+- **`api/`** — FastAPI backend, Auth0 integration, MongoDB, matching & chat services.
+- **`mobile/`** — Expo app, screens, and build scripts.
+
+## Setup & run
 
 ```bash
-npm run setup        # API venv + pip install, then mobile npm install + patch-package
+npm run setup        # one-time: API venv + pip install, mobile npm install
+npm run run:api      # API at http://localhost:8000 (separate terminal)
+npm start            # Expo dev server
 ```
-
-Or step by step:
-
-```bash
-npm run setup:api    # api/venv + pip install -r requirements.txt
-npm run setup:mobile # npm install (installs mobile deps via postinstall)
-```
-
-## Run
-
-```bash
-npm run run:api     # FastAPI on http://localhost:8000 (macOS/Linux; requires api/venv)
-npm start           # Expo dev server (or: npm run run:mobile)
-```
-
-Run API and mobile in separate terminals.
 
 ## Clean
 

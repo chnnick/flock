@@ -6,6 +6,14 @@
 
 ---
 
+<img width="1206" height="2622" alt="Simulator Screenshot - iPhone 16 Pro - 2026-02-16 at 00 15 40" src="https://github.com/user-attachments/assets/273d8197-2625-4a93-a827-4ed58ffa427e" />
+<img width="1206" height="2622" alt="Simulator Screenshot - iPhone 16 Pro - 2026-02-16 at 00 15 45" src="https://github.com/user-attachments/assets/f29f8a2f-69c6-4223-b8a0-10a3be8a8f67" />
+<img width="1206" height="2622" alt="Simulator Screenshot - iPhone 16 Pro - 2026-02-15 at 23 58 52" src="https://github.com/user-attachments/assets/ee7f60e8-b25f-4199-a82b-640c63ec83d2" />
+<img width="1206" height="2622" alt="Simulator Screenshot - iPhone 16 Pro - 2026-02-15 at 23 55 45" src="https://github.com/user-attachments/assets/93e24360-44a0-47b5-9aba-2692bbb477d4" />
+<img width="1206" height="2622" alt="Simulator Screenshot - iPhone 16 Pro - 2026-02-15 at 23 58 41" src="https://github.com/user-attachments/assets/9d3b7b73-3578-4f79-95bf-09dcb60a7d0c" />
+
+---
+
 ## Use cases
 
 - **Commute matching** — Get matched with people on your route (transit or walking) by time window and preferences.
